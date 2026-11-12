@@ -15,34 +15,31 @@ bordered Interface and Peer groups with activation and editing controls.
 - Preserves settings from `wireguird.settings` when the new settings file is absent.
   Saving preferences writes `wireguard-linux-gui.settings`.
 
-## Build and run
+## Getting started
 
-Install the build and runtime dependencies on Debian/Ubuntu:
+Use a Linux desktop with GTK 3, Ayatana AppIndicator, `wireguard-tools`, and
+`resolvconf`. To build from a checkout, follow the
+[build instructions](CONTRIBUTING.md#build-and-run).
 
-```sh
-sudo apt install wireguard-tools libgtk-3-dev libayatana-appindicator3-dev golang-go resolvconf
-```
+Launch an installed copy from your desktop application menu. The launcher uses
+`pkexec` to request root access, which is needed to read and manage tunnel
+configurations in `/etc/wireguard`.
 
-From this checkout:
+Import a WireGuard `.conf` or `.zip` file using Add Tunnel, select the tunnel,
+and activate it. Use the Log tab to inspect connection activity.
 
-```sh
-go generate ./...
-go build -o wireguard-linux-gui .
-sudo ./wireguard-linux-gui
-```
-
-The binary embeds the interface and icons. Root access is needed to read and
-manage tunnel configurations. Installed desktop launchers use `pkexec`.
-
-## Packages
-
-```sh
-go install github.com/goreleaser/goreleaser/v2@latest
-goreleaser release --snapshot --clean
-```
-
-GoReleaser builds `wireguard-linux-gui` archives, Debian packages, and RPM packages,
-including the renamed desktop launcher, PolicyKit action, and icons.
+Local package builds produce `.deb`, `.rpm`, and `.tar.gz` files; see
+[packaging instructions](CONTRIBUTING.md#build-packages).
 
 Historical wireguird releases and the release check still point to the original
 upstream repository. They are not releases of this renamed project.
+
+## Help and contributing
+
+Open an issue in this repository for bugs or feature requests. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, build
+troubleshooting, and guidance on issues and pull requests.
+
+## License
+
+[MIT](LICENSE).
