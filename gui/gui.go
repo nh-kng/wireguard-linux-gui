@@ -56,19 +56,6 @@ func Create(app *gtk.Application, b *gtk.Builder, w *gtk.ApplicationWindow, ind 
 		return err
 	}
 
-	ds, err := wgc.Devices()
-	if err != nil {
-		ShowError(w, err)
-		return err
-	}
-
-	indicator.SetIcon("wireguard_off")
-
-	for _, d := range ds {
-		header.SetSubtitle("Connected to " + d.Name)
-		indicator.SetIcon("wg_connected")
-	}
-
 	if _, err := createEditor("", false); err != nil {
 		return err
 	}

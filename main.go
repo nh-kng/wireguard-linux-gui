@@ -3,32 +3,36 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/UnnoTed/go-appindicator"
 	"github.com/UnnoTed/horizontal"
-	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
 	"github.com/rs/zerolog/log"
 	"wireguard-linux-gui/gui"
 	"wireguard-linux-gui/gui/countries"
+	"wireguard-linux-gui/internal/instance"
 	"wireguard-linux-gui/static"
 )
 
-var iconTmpDir = os.TempDir()
+var iconTmpDir string
 var win *gtk.ApplicationWindow
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	if os.Geteuid() != 0 {
 		fmt.Println("wireguard-linux-gui requires root to access /etc/wireguard and wg-quick.")
 		fmt.Println("Run: pkexec wireguard-linux-gui")
-		return
+		return 1
 	}
 
-	defer os.Remove(iconTmpDir)
 	defer countries.CloseDatabase()
 
 	log.Logger = log.Output(horizontal.ConsoleWriter{Out: os.Stderr})
@@ -42,30 +46,53 @@ func main() {
 	application, err := gtk.ApplicationNew(appID, glib.APPLICATION_FLAGS_NONE)
 	if err != nil {
 		log.Error().Err(err).Msg("error creating application")
-		return
+		return 1
+	}
+
+	// pkexec may start us without the desktop's session bus. Keep a local
+	// singleton as well as GtkApplication's D-Bus activation support.
+	session := sha256.Sum256([]byte(os.Getenv("DISPLAY") + "\x00" + os.Getenv("WAYLAND_DISPLAY")))
+	owner, err := instance.Open(filepath.Join("/run/wireguard-linux-gui", fmt.Sprintf("%x", session[:8])), func() {
+		glib.IdleAdd(func() { application.Activate() })
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("error activating application")
+		return 1
+	}
+	if owner == nil {
+		return 0
+	}
+	defer owner.Close()
+
+	iconTmpDir, err = os.MkdirTemp("", "wireguard-linux-gui-icons-")
+	if err != nil {
+		log.Error().Err(err).Msg("error creating icon directory")
+		return 1
+	}
+	defer os.RemoveAll(iconTmpDir)
+	// The desktop shell reads these public icons as the unprivileged user.
+	if err := os.Chmod(iconTmpDir, 0755); err != nil {
+		log.Error().Err(err).Msg("error making tray icons readable")
+		return 1
 	}
 
 	application.Connect("activate", func() {
+		if win != nil {
+			win.ShowAll()
+			win.Present()
+			return
+		}
 		if err := createWindow(application); err != nil {
 			log.Error().Err(err).Msg("create window error")
+			application.Quit()
 		}
 	})
 
-	os.Exit(application.Run(os.Args))
+	return application.Run(os.Args)
 }
 
 func createTray(application *gtk.Application) (*appindicator.Indicator, error) {
 	menu, err := gtk.MenuNew()
-	if err != nil {
-		return nil, err
-	}
-
-	menuShow, err := gtk.MenuItemNewWithLabel("Show")
-	if err != nil {
-		return nil, err
-	}
-
-	menuQuit, err := gtk.MenuItemNewWithLabel("Quit")
 	if err != nil {
 		return nil, err
 	}
@@ -95,22 +122,6 @@ func createTray(application *gtk.Application) (*appindicator.Indicator, error) {
 	// indicator.SetLabel("wireguard-linux-gui", "")
 	indicator.SetStatus(appindicator.StatusActive)
 	indicator.SetMenu(menu)
-
-	menuShow.Connect("activate", func() {
-		win.Show()
-		// createWindow(application)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	menuQuit.Connect("activate", func() {
-		application.Quit()
-	})
-
-	menu.Add(menuShow)
-	menu.Add(menuQuit)
-	menu.ShowAll()
 
 	return indicator, nil
 }
@@ -144,32 +155,10 @@ func createWindow(application *gtk.Application) error {
 	}
 	application.AddWindow(win)
 
-	win.Connect("destroy", func() {
-		gtk.MainQuit()
-	})
-
-	// win.SetDecorated(false)
-
-	css, err := gtk.CssProviderNew()
-	if err != nil {
-		log.Error().Err(err).Msg("error creating css provider")
-		return err
-	}
-
-	if err := css.LoadFromData(gui.Stylesheet); err != nil {
-		return err
-	}
-	screen, err := gdk.ScreenGetDefault()
-	if err != nil {
-		log.Error().Err(err).Msg("error getting screen")
-		return err
-	}
-
-	gtk.AddProviderForScreen(screen, css, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-
 	indicator, err := createTray(application)
 	if err != nil {
 		log.Error().Err(err).Msg("create tray error")
+		return err
 	}
 
 	if err := gui.Create(application, b, win, indicator); err != nil {
@@ -181,7 +170,7 @@ func createWindow(application *gtk.Application) error {
 		win.ShowAll()
 	}
 
-	win.SetTitle("wireguard-linux-gui")
+	win.SetTitle("Manage WireGuard Tunnels")
 
 	return nil
 }

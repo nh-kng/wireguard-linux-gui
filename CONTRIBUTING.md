@@ -18,8 +18,9 @@ behavior you would like to see.
 
 ## Development setup
 
-Work from a local checkout on Linux. Install Go and the native build and runtime
-dependencies on Debian/Ubuntu:
+Work from a local checkout on Linux. Install Go and any missing native build and
+runtime dependencies on Debian/Ubuntu. This is a one-time setup; skip it when
+the dependencies are already installed:
 
 ```sh
 sudo apt update
@@ -50,6 +51,57 @@ Rerun it after changing the Glade file or embedded assets. The generated
 Root access is needed to read and manage tunnel configurations. Installed desktop
 launchers use `pkexec`.
 
+## Install locally for desktop testing
+
+First choose **Quit** from the tray menu of every running copy. Closing the
+window only hides it, so reopening would otherwise activate the old process.
+For a quick test without installing, use `sudo ./wireguard-linux-gui` after
+building as described above.
+
+To test launching the built app from Applications, run these commands from the
+repository root. They replace the installed binary and desktop integration:
+
+```sh
+sudo install -Dm755 ./wireguard-linux-gui /usr/bin/wireguard-linux-gui
+sudo install -Dm644 deb/usr/share/applications/wireguard-linux-gui.desktop /usr/share/applications/wireguard-linux-gui.desktop
+sudo install -Dm644 deb/usr/share/polkit-1/actions/wireguard-linux-gui.policy /usr/share/polkit-1/actions/wireguard-linux-gui.policy
+sudo mkdir -p /usr/share/wireguard-linux-gui
+sudo cp -a Icon /usr/share/wireguard-linux-gui/
+```
+
+Launch **wireguard-linux-gui** from Applications, then check:
+
+- Closing the window and launching again shows the existing window with one
+  tray icon. The tray's **Manage Tunnels** action also reopens it.
+- Activating or deactivating a profile updates its status and tray checkmark
+  immediately.
+- Changes made outside the app, for example with `wg-quick`, appear within
+  approximately one second while the window is open or five seconds while hidden.
+- Reopening the window requests fresh status immediately.
+- Closing the window or choosing **Quit** leaves active tunnels running.
+
+### Rebuild and reinstall after changes
+
+Choose **Quit** from the running app's tray menu, then run from the repository
+root:
+
+```sh
+go generate ./... &&
+go build -o wireguard-linux-gui . &&
+sudo install -Dm755 ./wireguard-linux-gui /usr/bin/wireguard-linux-gui
+```
+
+The `&&` operators ensure installation only happens if generation and the build
+succeed. Reopen **wireguard-linux-gui** from Applications afterward.
+
+For code or interface changes, only the binary needs replacing. Repeat the
+desktop launcher, PolicyKit policy, or icon installation commands above only
+when those files change. You do not need to rerun `apt install` for dependencies
+that are already installed or rebuild a `.deb` package for this local workflow.
+
+For package testing, build the packages below and install the chosen `.deb` with
+`sudo apt install /absolute/path/to/package.deb` instead of copying files manually.
+
 ## Check your changes
 
 Format changed Go files with `gofmt`, then generate assets and run the tests:
@@ -60,10 +112,11 @@ go test ./...
 go build -o wireguard-linux-gui .
 ```
 
-The existing settings and endpoint tests can also run without GTK dependencies:
+The settings, endpoint, instance, and status polling tests can run without GTK
+dependencies:
 
 ```sh
-go test ./settings ./gui/endpoints
+go test -race ./settings ./gui/endpoints ./internal/instance ./internal/statuspoll
 ```
 
 For interface changes, launch the application in a graphical session and check
@@ -116,6 +169,26 @@ pkg-config --modversion gio-2.0 glib-2.0 gobject-2.0 gtk+-3.0 ayatana-appindicat
 ```
 
 Then rerun the build or package task.
+
+### GTK warnings or a quiet first build
+
+Warnings about `g_binding_get_source` or `g_binding_get_target` being deprecated
+come from the gotk3 dependency. These warnings alone do not stop the build.
+The first build compiles the GTK bindings through CGO and can take several
+minutes without printing output. `fileb0x: no changes detected` also indicates
+that generation succeeded and the embedded assets are already current.
+
+To show package compilation progress, run:
+
+```sh
+go generate ./... &&
+go build -v -o wireguard-linux-gui . &&
+sudo install -Dm755 ./wireguard-linux-gui /usr/bin/wireguard-linux-gui
+```
+
+Wait for the command to finish; pressing Ctrl+C (`^C`) interrupts compilation
+and skips installation. Later builds reuse Go's compilation cache. If the build
+exits with an error, include the final error output when reporting it.
 
 ## Submit a pull request
 

@@ -25,10 +25,12 @@ import (
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
 	"github.com/rs/zerolog/log"
+	"golang.zx2c4.com/wireguard/wgctrl"
 	"gopkg.in/ini.v1"
 	"wireguard-linux-gui/gui/countries"
 	"wireguard-linux-gui/gui/endpoints"
 	"wireguard-linux-gui/gui/get"
+	"wireguard-linux-gui/internal/statuspoll"
 	"wireguard-linux-gui/settings"
 )
 
@@ -71,15 +73,23 @@ type Tunnels struct {
 
 	ButtonChangeState *gtk.Button
 	icons             map[string]*gtk.Image
-	ticker            *time.Ticker
+	statusPoller      *statuspoll.Poller[[]*wgtypes.Device]
+	statusTimer       glib.SourceHandle
+	devices           []*wgtypes.Device
+	statusAvailable   bool
 
+	editingName                  string
+	selectedPublicKey            string
+	selectedListenPort           string
 	lastSelected                 string
 	reconnectedRememberedServers bool
 
 	grayIcon  *gtk.Image
 	greenIcon *gtk.Image
 
-	menuTunnels            *gtk.MenuItem
+	menuNetworks           *gtk.MenuItem
+	menuDeactivate         *gtk.MenuItem
+	menuStatus             *gtk.MenuItem
 	tunnelsTrayMenuItems   map[string]*gtk.CheckMenuItem
 	tunnelsTrayMenuHandles map[string]glib.SignalHandle
 }
@@ -88,33 +98,24 @@ func (t *Tunnels) Create() error {
 	t.icons = map[string]*gtk.Image{}
 	t.tunnelsTrayMenuItems = make(map[string]*gtk.CheckMenuItem)
 	t.tunnelsTrayMenuHandles = make(map[string]glib.SignalHandle)
-	t.ticker = time.NewTicker(1 * time.Second)
 
 	var err error
-	menu := indicator.GetMenu()
-	t.menuTunnels, err = gtk.MenuItemNewWithLabel("Tunnels")
-	if err != nil {
+	if err := t.createStatusMenu(); err != nil {
 		return err
 	}
-	menu.Add(t.menuTunnels)
-	menu.ReorderChild(t.menuTunnels, 1)
 
-	t.grayIcon, err = loadEmbeddedImage(IconPath + "not_connected.png")
+	t.grayIcon, err = loadStatusIcon(IconPath + "dot-gray.png")
 	if err != nil {
 		return err
 	}
 
-	t.greenIcon, err = loadEmbeddedImage(IconPath + "connected.png")
+	t.greenIcon, err = loadStatusIcon(IconPath + "dot-green.png")
 	if err != nil {
 		return err
 	}
 
 	tl, err := get.ListBox("tunnel_list")
 	if err != nil {
-		return err
-	}
-
-	if err := t.ScanTunnels(); err != nil {
 		return err
 	}
 
@@ -128,51 +129,6 @@ func (t *Tunnels) Create() error {
 			}
 		}
 	})
-
-	// menu
-	{
-		mb, err := get.MenuButton("menu")
-		if err != nil {
-			return err
-		}
-
-		menu, err := gtk.MenuNew()
-		if err != nil {
-			return err
-		}
-
-		mSettings, err := gtk.MenuItemNew()
-		if err != nil {
-			return err
-		}
-
-		mSettings.SetLabel("Settings")
-		//mSettings.SetSensitive(false)
-		mSettings.Connect("activate", func() {
-			settingsWindow.ShowAll()
-		})
-		menu.Append(mSettings)
-
-		mVersion, err := gtk.MenuItemNew()
-		if err != nil {
-			return err
-		}
-
-		mVersion.SetLabel("VERSION: v" + Version)
-		//mVersion.SetSensitive(false)
-		mVersion.Connect("activate", func() {
-			if err := exec.Command("xdg-open", Repo).Start(); err != nil {
-				ShowError(window, err, "open repo url error")
-			}
-		})
-		menu.Append(mVersion)
-
-		menu.SetHAlign(gtk.ALIGN_CENTER)
-		menu.SetVAlign(gtk.ALIGN_CENTER)
-
-		menu.ShowAll()
-		mb.SetPopup(menu)
-	}
 
 	t.Interface.Status, err = get.Label("label_interface_status")
 	if err != nil {
@@ -240,8 +196,9 @@ func (t *Tunnels) Create() error {
 	// 	return err
 	// }
 
-	tl.Connect("row-activated", func(l *gtk.ListBox, row *gtk.ListBoxRow) {
+	tl.Connect("row-selected", func(l *gtk.ListBox, row *gtk.ListBoxRow) {
 		t.UpdateRow(row)
+		t.applySelectionState(row)
 	})
 
 	// button: add tunnel
@@ -500,6 +457,7 @@ func (t *Tunnels) Create() error {
 				ext = ".conf"
 			}
 
+			t.editingName = name
 			path := filepath.Join(TunnelsPath, name+ext)
 			log.Print(path)
 
@@ -518,10 +476,6 @@ func (t *Tunnels) Create() error {
 				return err
 			}
 
-			// low budget GtkSourceView
-			propertyColor := "purple"
-			sectionColor := "green"
-
 			conf := string(data)
 
 			// gets public key to use in the PublicKey entry
@@ -536,23 +490,6 @@ func (t *Tunnels) Create() error {
 				epk.SetText(m[1])
 			}
 
-			r := strings.NewReplacer(
-				"&", "&amp;",
-				"PrivateKey", "<span color=\""+propertyColor+"\">PrivateKey</span>",
-				"PublicKey", "<span color=\""+propertyColor+"\">PublicKey</span>",
-				"Address", "<span color=\""+propertyColor+"\">Address</span>",
-				"DNS", "<span color=\""+propertyColor+"\">DNS</span>",
-				"AllowedIPs", "<span color=\""+propertyColor+"\">AllowedIPs</span>",
-				"Endpoint", "<span color=\""+propertyColor+"\">Endpoint</span>",
-				"PostUp", "<span color=\""+propertyColor+"\">PostUp</span>",
-				"PreDown", "<span color=\""+propertyColor+"\">PreDown</span>",
-				"PreSharedKey", "<span color=\""+propertyColor+"\">PreSharedKey</span>",
-				"PersistentKeepalive", "<span color=\""+propertyColor+"\">PersistentKeepalive</span>",
-				"[Interface]", "<span color=\""+sectionColor+"\">[Interface]</span>",
-				"[Peer]", "<span color=\""+sectionColor+"\">[Peer]</span>",
-			)
-			conf = r.Replace(conf)
-
 			ttt, err := gtk.TextTagTableNew()
 			if err != nil {
 				return err
@@ -562,7 +499,7 @@ func (t *Tunnels) Create() error {
 				return err
 			}
 
-			tb.InsertMarkup(tb.GetStartIter(), conf)
+			tb.SetText(conf)
 			et.SetBuffer(tb)
 
 			ew.ShowAll()
@@ -614,23 +551,8 @@ func (t *Tunnels) Create() error {
 
 	btnEditorSave.Connect("clicked", func() {
 		err := func() error {
-			row := tl.GetSelectedRow()
-			if row == nil {
-				return nil
-			}
-
-			name, err := row.GetName()
-			if err != nil {
-				return err
-			}
-
-			// adds extension when empty
-			ext := ""
-			if !strings.HasSuffix(name, ".conf") {
-				ext = ".conf"
-			}
-
-			path := filepath.Join(TunnelsPath, name+ext)
+			name := t.editingName
+			path := filepath.Join(TunnelsPath, name+".conf")
 
 			// get the new tunnel name
 			nameEntry, err := get.Entry("editor_name")
@@ -644,14 +566,21 @@ func (t *Tunnels) Create() error {
 			}
 			newName = strings.TrimSpace(newName)
 
-			// rename the tunnel
+			if !regexp.MustCompile(`^[a-zA-Z0-9_=+.-]{1,15}$`).MatchString(newName) || newName == "." || newName == ".." {
+				return errors.New("Use a tunnel name of 1–15 letters, numbers, or _ = + . - characters.")
+			}
 			if name != newName {
-				newPath := filepath.Join(TunnelsPath, newName+ext)
-
-				if err := os.Rename(path, newPath); err != nil {
+				newPath := filepath.Join(TunnelsPath, newName+".conf")
+				if _, err := os.Stat(newPath); err == nil {
+					return errors.New("A tunnel with that name already exists.")
+				} else if !os.IsNotExist(err) {
 					return err
 				}
-
+				if name != "" {
+					if err := os.Rename(path, newPath); err != nil {
+						return err
+					}
+				}
 				path = newPath
 			}
 
@@ -672,10 +601,11 @@ func (t *Tunnels) Create() error {
 			}
 
 			// write changes
-			if err := os.WriteFile(path, []byte(data), 666); err != nil {
+			if err := os.WriteFile(path, []byte(data), 0600); err != nil {
 				return err
 			}
 
+			t.lastSelected = newName
 			modified = false
 			if err := t.ScanTunnels(); err != nil {
 				return err
@@ -757,97 +687,69 @@ func (t *Tunnels) Create() error {
 		return err
 	}
 
-	go func() {
-		for {
-			<-t.ticker.C
+	if err := t.ScanTunnels(); err != nil {
+		return err
+	}
 
-			// update tray icon
-			activeNames := t.ActiveDeviceName()
-			if len(activeNames) == 0 {
-				indicator.SetIcon("wireguard_off")
-			} else {
-				indicator.SetIcon("wg_connected")
-			}
-
-			if !window.IsVisible() {
-				continue
-			}
-
-			glib.IdleAdd(func() {
-				// update list icons
-				for name := range t.icons {
-					if dry.StringListContains(activeNames, name) {
-						t.icons[name].SetFromPixbuf(t.greenIcon.GetPixbuf())
-					} else {
-						t.icons[name].SetFromPixbuf(t.grayIcon.GetPixbuf())
-					}
-				}
-
-				// update header label with tunnel names
-				if len(activeNames) == 0 {
-					header.SetSubtitle("Not connected!")
-				} else {
-					header.SetSubtitle("Connected to " + strings.Join(activeNames, ", "))
-				}
-			})
-
-			row := tl.GetSelectedRow()
-			if row == nil {
-				t.UnknownLabels()
-				continue
-			}
-
-			name, err := row.GetName()
-			if err != nil {
-				log.Error().Err(err).Msg("row get name err")
-				continue
-			}
-
-			if !dry.StringListContains(activeNames, name) {
-				glib.IdleAdd(func() {
-					t.Interface.Status.SetText("Inactive")
-					t.Interface.PublicKey.SetText("unknown")
-					t.Interface.ListenPort.SetText("unknown")
-					t.ButtonChangeState.SetLabel("Activate")
-					t.Peer.LatestHandshake.SetText("unknown")
-					t.Peer.Transfer.SetText("unknown")
-				})
-				continue
-			}
-
-			d, err := wgc.Device(name)
-			if err != nil {
-				log.Error().Err(err).Msg("wgc get device err")
-				continue
-			}
-
-			glib.IdleAdd(func() {
-				t.Interface.Status.SetText("Active")
-				t.Interface.PublicKey.SetText(d.PublicKey.String())
-				t.Interface.ListenPort.SetText(strconv.Itoa(d.ListenPort))
-				t.ButtonChangeState.SetLabel("Deactivate")
-
-				for _, p := range d.Peers {
-					hs := humanize.Time(p.LastHandshakeTime)
-					t.Peer.LatestHandshake.SetText(hs)
-					t.Peer.Transfer.SetText(humanize.Bytes(uint64(p.ReceiveBytes)) + " received, " + humanize.Bytes(uint64(p.TransmitBytes)) + " sent")
-				}
-			})
+	// GTK widgets and AppIndicator must only be accessed on the GTK thread.
+	t.statusPoller = statuspoll.New(func() ([]*wgtypes.Device, error) {
+		// Use a separate client so UI actions and polling never share a socket.
+		client, err := wgctrl.New()
+		if err != nil {
+			return nil, err
 		}
-	}()
+		defer client.Close()
+		return client.Devices()
+	}, func(f func()) { glib.IdleAdd(f) }, func(ds []*wgtypes.Device, err error) {
+		t.devices = ds
+		t.applyStatus(ds, err)
+		t.scheduleStatusRefresh()
+	})
+	window.Connect("show", func() { t.RefreshStatus() })
+	window.Connect("hide", func() { t.scheduleStatusRefresh() })
+	application.Connect("shutdown", func() {
+		t.cancelStatusTimer()
+		t.statusPoller.Close()
+	})
 
-	go func() {
-		if Settings.RememberConnectedServers && Settings.ConnectedServers != nil && len(Settings.ConnectedServers) > 0 {
-			for tunnel := range Settings.ConnectedServers {
-				if err := t.ToggleTunnel(nil, tunnel); err != nil {
-					log.Error().Err(err).Str("tunnel", tunnel).Msg("error connecting to tunnel")
-					wlog("ERROR", "error connecting to tunnel")
+	// Restore only missing profiles. Toggling an existing interface would stop it.
+	if Settings.RememberConnectedServers {
+		ds, err := wgc.Devices()
+		if err != nil {
+			log.Error().Err(err).Msg("skipping remembered tunnels: WireGuard status unavailable")
+		}
+		active := deviceNames(ds)
+		// With a single tunnel allowed, preserve any externally activated profile.
+		if err == nil && (Settings.MultipleTunnels || len(active) == 0) {
+			var remembered []string
+			for name := range Settings.ConnectedServers {
+				remembered = append(remembered, name)
+			}
+			sort.Slice(remembered, func(i, j int) bool {
+				a, b := remembered[i], remembered[j]
+				if Settings.ConnectedServers[a] == Settings.ConnectedServers[b] {
+					return a < b
+				}
+				return Settings.ConnectedServers[a] > Settings.ConnectedServers[b]
+			})
+			for _, name := range remembered {
+				if dry.StringListContains(active, name) {
+					continue
+				}
+				if err := t.ToggleTunnel(nil, name); err != nil {
+					log.Error().Err(err).Str("tunnel", name).Msg("error restoring tunnel")
+				}
+				if !Settings.MultipleTunnels {
+					break
 				}
 			}
 		}
-
-		t.reconnectedRememberedServers = true
-	}()
+	}
+	t.reconnectedRememberedServers = true
+	if err := t.createLayoutMenus(); err != nil {
+		return err
+	}
+	t.RefreshStatus()
 	return nil
 }
 
@@ -909,13 +811,11 @@ func (t *Tunnels) FromSettings() error {
 }
 
 func (t *Tunnels) UpdateRow(row *gtk.ListBoxRow) {
+	if row == nil {
+		return
+	}
 	err := func() error {
-		ds, err := wgc.Devices()
-		if err != nil {
-			return err
-		}
-
-		log.Debug().Interface("list", ds).Msg("devices")
+		ds := t.devices
 
 		id, err := row.GetName()
 		if err != nil {
@@ -932,47 +832,41 @@ func (t *Tunnels) UpdateRow(row *gtk.ListBoxRow) {
 
 		peersec := cfg.Section("Peer")
 		insec := cfg.Section("Interface")
+		t.selectedPublicKey = "—"
+		if key, err := wgtypes.ParseKey(insec.Key("PrivateKey").String()); err == nil {
+			t.selectedPublicKey = key.PublicKey().String()
+		}
+		t.selectedListenPort = insec.Key("ListenPort").String()
+		if t.selectedListenPort == "" {
+			t.selectedListenPort = "Automatic"
+		}
 
-		glib.IdleAdd(func() {
-			t.Interface.Addresses.SetText(insec.Key("Address").String())
-			t.Interface.Status.SetText("Inactive")
-			t.Interface.DNS.SetText(insec.Key("DNS").String())
+		nameLabel, _ := get.Label("label_interface_name")
+		nameLabel.SetText(id)
+		keepalive, _ := get.Label("label_peer_keepalive")
+		value := peersec.Key("PersistentKeepalive").String()
+		if value == "" || value == "0" {
+			value = "Off"
+		} else {
+			value += " seconds"
+		}
+		keepalive.SetText(value)
+		t.Interface.Addresses.SetText(insec.Key("Address").String())
+		t.setInterfaceState("Inactive")
+		t.Interface.DNS.SetText(insec.Key("DNS").String())
 
-			t.ButtonChangeState.SetLabel("Activate")
+		t.ButtonChangeState.SetLabel("Activate")
+		t.Interface.PublicKey.SetText(t.selectedPublicKey)
+		t.Interface.ListenPort.SetText(t.selectedListenPort)
 
-			t.Peer.AllowedIPs.SetText(peersec.Key("AllowedIPs").String())
-			t.Peer.PublicKey.SetText(peersec.Key("PublicKey").String())
-			t.Peer.Endpoint.SetText(peersec.Key("Endpoint").String())
-		})
+		t.Peer.AllowedIPs.SetText(peersec.Key("AllowedIPs").String())
+		t.Peer.PublicKey.SetText(peersec.Key("PublicKey").String())
+		t.Peer.Endpoint.SetText(peersec.Key("Endpoint").String())
 
-		for _, d := range ds {
-			if d.Name != id {
-				continue
-			}
-
-			// i'll do this later
-			// _ = boxPeers
-			// boxPeers.GetChildren().Foreach(func(item interface{}) {
-			// 	boxPeers.Remove(item.(*gtk.Widget))
-			// })
-
-			glib.IdleAdd(func() {
-				t.Interface.Status.SetText("Active")
-				t.ButtonChangeState.SetLabel("Deactivate")
-				t.Interface.PublicKey.SetText(d.PublicKey.String())
-				t.Interface.ListenPort.SetText(strconv.Itoa(d.ListenPort))
-			})
-
-			for _, p := range d.Peers {
-				hs := humanize.Time(p.LastHandshakeTime)
-
-				glib.IdleAdd(func() {
-					t.Peer.LatestHandshake.SetText(hs)
-					t.Peer.Transfer.SetText(humanize.Bytes(uint64(p.ReceiveBytes)) + " received, " + humanize.Bytes(uint64(p.TransmitBytes)) + " sent")
-				})
-			}
-
-			break
+		if t.statusAvailable {
+			t.applyStatus(ds, nil)
+		} else {
+			t.setInterfaceState("Unknown")
 		}
 
 		return nil
@@ -1024,16 +918,15 @@ func (t *Tunnels) ScanTunnels() error {
 	})
 
 	activeNames := t.ActiveDeviceName()
-	if len(activeNames) > 0 {
-		header.SetSubtitle("Connected to " + strings.Join(activeNames, ", "))
-	} else {
-		header.SetSubtitle("No active tunnels")
+	t.icons = make(map[string]*gtk.Image)
+	for _, item := range t.tunnelsTrayMenuItems {
+		item.Destroy()
 	}
+	t.tunnelsTrayMenuItems = make(map[string]*gtk.CheckMenuItem)
+	t.tunnelsTrayMenuHandles = make(map[string]glib.SignalHandle)
 
-	tunnelsMenu, err := gtk.MenuNew()
-	if err != nil {
-		return err
-	}
+	tunnelsMenu := indicator.GetMenu()
+	menuIndex := 4
 
 	for _, name := range configList {
 		row, err := gtk.ListBoxRowNew()
@@ -1049,6 +942,8 @@ func (t *Tunnels) ScanTunnels() error {
 			return err
 		}
 		tunnelsMenu.Add(menuItem)
+		tunnelsMenu.ReorderChild(menuItem, menuIndex)
+		menuIndex++
 		tunnelName := name // this new variable is necessary - https://go.dev/blog/loopvar-preview
 		handle := menuItem.Connect("toggled", func() {
 			err := t.ToggleTunnel(nil, tunnelName)
@@ -1200,7 +1095,7 @@ func (t *Tunnels) ScanTunnels() error {
 		}
 	}
 
-	if t.lastSelected == "" {
+	if tl.GetSelectedRow() == nil {
 		row := tl.GetRowAtIndex(0)
 		if row != nil {
 			tl.SelectRow(row)
@@ -1208,46 +1103,171 @@ func (t *Tunnels) ScanTunnels() error {
 		}
 	}
 
-	t.menuTunnels.SetSubmenu(tunnelsMenu)
+	if export, err := get.Button("button_zip_tunnel"); err == nil {
+		export.SetSensitive(len(configList) > 0)
+	}
 	indicator.GetMenu().ShowAll()
+	t.menuNetworks.SetVisible(Connected)
+	t.menuDeactivate.SetVisible(Connected)
+	if t.Interface.Status != nil {
+		t.RefreshStatus()
+	}
 
 	return nil
 }
 
 func (t *Tunnels) UnknownLabels() {
-	glib.IdleAdd(func() {
-		t.ButtonChangeState.SetLabel("unknown")
-
-		t.Interface.Addresses.SetText("unknown")
-		t.Interface.Status.SetText("unknown")
-		t.Interface.DNS.SetText("unknown")
-
-		t.Peer.AllowedIPs.SetText("unknown")
-		t.Peer.PublicKey.SetText("unknown")
-		t.Peer.Endpoint.SetText("unknown")
-
-		t.Interface.Status.SetText("unknown")
-		t.ButtonChangeState.SetLabel("unknown")
-		t.Interface.PublicKey.SetText("unknown")
-		t.Interface.ListenPort.SetText("unknown")
-		t.Peer.LatestHandshake.SetText("unknown")
-
-		t.Peer.Transfer.SetText("unknown")
-	})
+	t.ButtonChangeState.SetLabel("Activate")
+	for _, label := range []*gtk.Label{t.Interface.Addresses, t.Interface.Status, t.Interface.DNS, t.Interface.PublicKey, t.Interface.ListenPort, t.Peer.AllowedIPs, t.Peer.PublicKey, t.Peer.Endpoint, t.Peer.LatestHandshake, t.Peer.Transfer} {
+		label.SetText("—")
+	}
 }
 
-func (t *Tunnels) ActiveDeviceName() []string {
-	ds, _ := wgc.Devices()
-
-	var names []string
+func deviceNames(ds []*wgtypes.Device) []string {
+	names := make([]string, 0, len(ds))
 	for _, d := range ds {
 		names = append(names, d.Name)
 	}
-
+	sort.Strings(names)
 	return names
 }
 
+func (t *Tunnels) ActiveDeviceName() []string {
+	return deviceNames(t.devices)
+}
+
+// RefreshStatus requests a background snapshot of live WireGuard interfaces.
+// Call only from the GTK main thread. An activated interface does not imply a
+// successful peer handshake.
+func (t *Tunnels) RefreshStatus() {
+	if t.statusPoller == nil {
+		return
+	}
+	t.cancelStatusTimer()
+	t.statusPoller.Refresh()
+}
+
+func (t *Tunnels) cancelStatusTimer() {
+	if t.statusTimer != 0 {
+		glib.SourceRemove(t.statusTimer)
+		t.statusTimer = 0
+	}
+}
+
+func (t *Tunnels) scheduleStatusRefresh() {
+	t.cancelStatusTimer()
+	interval := uint(5000)
+	if window.IsVisible() {
+		interval = 1000
+	}
+	t.statusTimer = glib.TimeoutAdd(interval, func() bool {
+		t.statusTimer = 0
+		t.RefreshStatus()
+		return false
+	})
+}
+
+func (t *Tunnels) applyStatus(ds []*wgtypes.Device, err error) {
+	t.statusAvailable = err == nil
+	if err != nil {
+		Connected = false
+		t.menuNetworks.Hide()
+		t.menuDeactivate.Hide()
+		t.menuStatus.SetLabel("Status: Unavailable")
+		indicator.SetIconFull("wireguard_off", "WireGuard status unavailable")
+		indicator.SetTitle("WireGuard status unavailable")
+		t.setInterfaceState("Unknown")
+		t.ButtonChangeState.SetSensitive(false)
+		for _, item := range t.tunnelsTrayMenuItems {
+			item.SetSensitive(false)
+		}
+		return
+	}
+	names := deviceNames(ds)
+	Connected = len(names) > 0
+	summary, icon := "No active tunnels", "wireguard_off"
+	if Connected {
+		summary, icon = "Active tunnels: "+strings.Join(names, ", "), "wg_connected"
+	}
+	state := "Inactive"
+	if Connected {
+		state = "Active"
+	}
+	t.menuStatus.SetLabel("Status: " + state)
+	t.menuDeactivate.SetLabel("Deactivate")
+	if len(names) > 1 {
+		t.menuDeactivate.SetLabel("Deactivate All")
+	}
+	t.menuNetworks.SetVisible(Connected)
+	t.menuDeactivate.SetVisible(Connected)
+	var networks []string
+	for _, d := range ds {
+		for _, p := range d.Peers {
+			for _, ip := range p.AllowedIPs {
+				networks = append(networks, ip.String())
+			}
+		}
+	}
+	networks = uniqueNetworks(networks)
+	if len(networks) == 0 {
+		networks = []string{"None"}
+	}
+	t.menuNetworks.SetLabel("Networks: " + strings.Join(networks, ", "))
+	indicator.SetIconFull(icon, summary)
+	indicator.SetTitle("wireguard-linux-gui — " + summary)
+	for name, img := range t.icons {
+		if dry.StringListContains(names, name) {
+			img.SetFromPixbuf(t.greenIcon.GetPixbuf())
+		} else {
+			img.SetFromPixbuf(t.grayIcon.GetPixbuf())
+		}
+	}
+	for name, item := range t.tunnelsTrayMenuItems {
+		item.SetSensitive(true)
+		item.HandlerBlock(t.tunnelsTrayMenuHandles[name])
+		item.SetActive(dry.StringListContains(names, name))
+		item.HandlerUnblock(t.tunnelsTrayMenuHandles[name])
+	}
+	tl, err := get.ListBox("tunnel_list")
+	if err != nil {
+		return
+	}
+	row := tl.GetSelectedRow()
+	t.applySelectionState(row)
+	if row == nil {
+		return
+	}
+	name, err := row.GetName()
+	if err != nil {
+		return
+	}
+	t.setInterfaceState("Inactive")
+	t.Interface.PublicKey.SetText(t.selectedPublicKey)
+	t.Interface.ListenPort.SetText(t.selectedListenPort)
+	t.ButtonChangeState.SetLabel("Activate")
+	t.Peer.LatestHandshake.SetText("—")
+	t.Peer.Transfer.SetText("—")
+	for _, d := range ds {
+		if d.Name != name {
+			continue
+		}
+		t.setInterfaceState("Active")
+		t.ButtonChangeState.SetLabel("Deactivate")
+		t.Interface.PublicKey.SetText(d.PublicKey.String())
+		t.Interface.ListenPort.SetText(strconv.Itoa(d.ListenPort))
+		for _, p := range d.Peers {
+			hs := "Never"
+			if !p.LastHandshakeTime.IsZero() {
+				hs = humanize.Time(p.LastHandshakeTime)
+			}
+			t.Peer.LatestHandshake.SetText(hs)
+			t.Peer.Transfer.SetText(humanize.Bytes(uint64(p.ReceiveBytes)) + " received, " + humanize.Bytes(uint64(p.TransmitBytes)) + " sent")
+		}
+	}
+}
+
 func (t *Tunnels) ToggleTunnel(row *gtk.ListBoxRow, name string) error {
+	defer t.RefreshStatus()
 	list, err := wgc.Devices()
 	if err != nil {
 		return err
@@ -1268,7 +1288,7 @@ func (t *Tunnels) ToggleTunnel(row *gtk.ListBoxRow, name string) error {
 		}
 	}
 
-	activeNames := t.ActiveDeviceName()
+	activeNames := deviceNames(list)
 	if row != nil && name == "" {
 		// conf name
 		name, err = row.GetName()
@@ -1279,29 +1299,21 @@ func (t *Tunnels) ToggleTunnel(row *gtk.ListBoxRow, name string) error {
 
 	// https://github.com/UnnoTed/wireguird/issues/11#issuecomment-1332047191
 	if len(name) >= 16 {
-		ShowError(window, errors.New("Tunnel's file name is too long ("+strconv.Itoa(len(name))+"), max length: 15"))
+		return errors.New("Tunnel's file name is too long (" + strconv.Itoa(len(name)) + "), max length: 15")
 	}
 
-	// disconnect from given tunnel
+	if name == "" {
+		return errors.New("No tunnel selected")
+	}
+
+	// Disconnect from the given tunnel, then query the resulting actual state.
 	dc := func(d *wgtypes.Device) error {
-		glib.IdleAdd(func() {
-			t.icons[d.Name].SetFromPixbuf(t.grayIcon.GetPixbuf())
-			if menuItem, ok := t.tunnelsTrayMenuItems[d.Name]; ok {
-				menuItem.HandlerBlock(t.tunnelsTrayMenuHandles[d.Name])
-				menuItem.SetActive(false)
-				menuItem.HandlerUnblock(t.tunnelsTrayMenuHandles[d.Name])
-			}
-		})
-
 		c := exec.Command("wg-quick", "down", d.Name)
-		output, err := c.Output()
+		output, err := c.CombinedOutput()
 		if err != nil {
-			es := string(err.(*exec.ExitError).Stderr)
-			log.Error().Err(err).Str("output", string(output)).Str("error", es).Msg("wg-quick down error")
-
-			oerr := err.Error() + "\nwg-quick's output:\n" + es
-			wlog("ERROR", oerr)
-			return errors.New(oerr)
+			err = fmt.Errorf("wg-quick down %s: %w\n%s", d.Name, err, output)
+			wlog("ERROR", err.Error())
+			return err
 		}
 
 		if Settings.RememberConnectedServers && Settings.ConnectedServers != nil && len(Settings.ConnectedServers) > 0 && t.reconnectedRememberedServers {
@@ -1312,7 +1324,6 @@ func (t *Tunnels) ToggleTunnel(row *gtk.ListBoxRow, name string) error {
 			}
 		}
 
-		indicator.SetIcon("wireguard_off")
 		return wlog("INFO", "Disconnected from "+d.Name)
 	}
 
@@ -1339,31 +1350,18 @@ func (t *Tunnels) ToggleTunnel(row *gtk.ListBoxRow, name string) error {
 		}
 	}
 
-	// dont connect to the new one as this is a disconnect action
+	// Do not reconnect after a disconnect action.
 	if dry.StringListContains(activeNames, name) {
-		t.UpdateRow(row)
-
-		glib.IdleAdd(func() {
-			if len(activeNames) == 1 {
-				header.SetSubtitle("Not connected!")
-			} else {
-				activeNames := t.ActiveDeviceName()
-				header.SetSubtitle("Connected to " + strings.Join(activeNames, ", "))
-			}
-		})
 		return nil
 	}
 
 	// connect to a tunnel
 	c := exec.Command("wg-quick", "up", name)
-	output, err := c.Output()
+	output, err := c.CombinedOutput()
 	if err != nil {
-		es := string(err.(*exec.ExitError).Stderr)
-		log.Error().Err(err).Str("output", string(output)).Str("error", es).Msg("wg-quick up error")
-
-		oerr := err.Error() + "\nwg-quick's output:\n" + es
-		wlog("ERROR", oerr)
-		return errors.New(oerr)
+		err = fmt.Errorf("wg-quick up %s: %w\n%s", name, err, output)
+		wlog("ERROR", err.Error())
+		return err
 	}
 
 	if Settings.RememberConnectedServers {
@@ -1377,24 +1375,6 @@ func (t *Tunnels) ToggleTunnel(row *gtk.ListBoxRow, name string) error {
 			log.Error().Err(err).Msg("Error saving settings on connect")
 		}
 	}
-
-	// update header label with tunnel names
-	glib.IdleAdd(func() {
-		activeNames := t.ActiveDeviceName()
-		header.SetSubtitle("Connected to " + strings.Join(activeNames, ", "))
-	})
-
-	// set icon to connected for the tunnel's row
-	glib.IdleAdd(func() {
-		t.icons[name].SetFromPixbuf(t.greenIcon.GetPixbuf())
-		t.UpdateRow(row)
-		indicator.SetIcon("wg_connected")
-		if menuItem, ok := t.tunnelsTrayMenuItems[name]; ok {
-			menuItem.HandlerBlock(t.tunnelsTrayMenuHandles[name])
-			menuItem.SetActive(true)
-			menuItem.HandlerUnblock(t.tunnelsTrayMenuHandles[name])
-		}
-	})
 
 	if err := wlog("INFO", "Connected to "+name); err != nil {
 		return err
@@ -1447,11 +1427,7 @@ func wlog(t string, text string) error {
 		return err
 	}
 
-	if t == "ERROR" {
-		t = `<span color="#FF0000">` + t + "</span>"
-	}
-
-	l.SetMarkup(`<span color="#008080">[` + time.Now().Format("02/Jan/06 15:04:05 MST") + `]</span>[` + t + `]: ` + text)
+	l.SetText("[" + time.Now().Format("02/Jan/06 15:04:05 MST") + "][" + t + "]: " + text)
 	l.SetHExpand(true)
 	l.SetHAlign(gtk.ALIGN_START)
 
