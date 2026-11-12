@@ -1,5 +1,5 @@
-Package: wireguird
-Source: wireguird
+Package: wireguard-linux-gui
+Source: wireguard-linux-gui
 Version: 1.2
 Section: utils
 Priority: extra

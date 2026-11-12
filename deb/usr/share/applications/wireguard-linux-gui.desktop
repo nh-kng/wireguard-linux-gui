@@ -1,0 +1,7 @@
+[Desktop Entry]
+Version=1.2
+Type=Application
+Terminal=false
+Exec=pkexec /usr/bin/wireguard-linux-gui
+Name=wireguard-linux-gui
+Icon=/usr/share/wireguard-linux-gui/Icon/128x128/wireguard.png

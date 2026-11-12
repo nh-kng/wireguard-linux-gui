@@ -1,4 +1,4 @@
-module github.com/UnnoTed/wireguird
+module wireguard-linux-gui
 
 go 1.21
 

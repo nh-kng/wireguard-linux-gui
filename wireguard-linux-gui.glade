@@ -99,6 +99,8 @@
             <property name="shadow-type">in</property>
             <child>
               <object class="GtkTextView" id="editor_text">
+                <property name="right-margin">8</property>
+                <property name="left-margin">8</property>
                 <property name="visible">True</property>
                 <property name="can-focus">True</property>
                 <property name="monospace">True</property>
@@ -152,6 +154,9 @@
         </child>
       </object>
     </child>
+    <style>
+      <class name="wireguard"/>
+    </style>
   </object>
   <object class="GtkImage" id="icon_delete">
     <property name="visible">True</property>
@@ -166,8 +171,10 @@
     <property name="can-focus">False</property>
   </object>
   <object class="GtkApplicationWindow" id="main_window">
-    <property name="width-request">720</property>
-    <property name="height-request">480</property>
+    <property name="default-height">560</property>
+    <property name="default-width">800</property>
+    <property name="width-request">760</property>
+    <property name="height-request">520</property>
     <property name="can-focus">False</property>
     <property name="window-position">center</property>
     <property name="show-menubar">False</property>
@@ -177,16 +184,49 @@
         <property name="can-focus">False</property>
         <property name="orientation">vertical</property>
         <child>
+          <object class="GtkBox">
+            <property name="spacing">8</property>
+            <property name="visible">True</property>
+            <style>
+              <class name="navigation"/>
+            </style>
+            <child>
+              <object class="GtkStackSwitcher">
+                <property name="visible">True</property>
+                <property name="can-focus">False</property>
+                <property name="stack">main_stack</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkBox">
+                <property name="hexpand">True</property>
+                <property name="visible">True</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkMenuButton" id="menu">
+                <property name="tooltip-text">Application settings and version</property>
+                <property name="label">Settings</property>
+                <property name="visible">True</property>
+                <property name="can-focus">True</property>
+                <property name="focus-on-click">False</property>
+                <property name="receives-default">True</property>
+                <property name="use-popover">False</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
           <object class="GtkStack" id="main_stack">
             <property name="visible">True</property>
             <property name="can-focus">False</property>
-            <property name="margin-start">8</property>
-            <property name="margin-end">8</property>
-            <property name="margin-top">8</property>
-            <property name="margin-bottom">8</property>
+            <property name="margin-start">12</property>
+            <property name="margin-end">12</property>
+            <property name="margin-top">12</property>
+            <property name="margin-bottom">12</property>
             <property name="hexpand">True</property>
             <property name="vexpand">True</property>
-            <property name="transition-type">slide-left-right</property>
+            <property name="transition-type">none</property>
             <child>
               <object class="GtkBox">
                 <property name="visible">True</property>
@@ -201,7 +241,7 @@
                     <property name="orientation">vertical</property>
                     <child>
                       <object class="GtkScrolledWindow">
-                        <property name="width-request">200</property>
+                        <property name="width-request">224</property>
                         <property name="visible">True</property>
                         <property name="can-focus">True</property>
                         <property name="hexpand">True</property>
@@ -217,13 +257,19 @@
                               <object class="GtkListBox" id="tunnel_list">
                                 <property name="width-request">200</property>
                                 <property name="visible">True</property>
-                                <property name="can-focus">False</property>
+                                <property name="can-focus">True</property>
                                 <property name="hexpand">True</property>
                                 <property name="vexpand">True</property>
+                                <style>
+                                  <class name="tunnel-list"/>
+                                </style>
                               </object>
                             </child>
                           </object>
                         </child>
+                        <style>
+                          <class name="tunnel-scroll"/>
+                        </style>
                       </object>
                       <packing>
                         <property name="expand">False</property>
@@ -281,7 +327,7 @@
                             <property name="visible">True</property>
                             <property name="can-focus">True</property>
                             <property name="receives-default">True</property>
-                            <property name="tooltip-text" translatable="yes">Zip all tunnels</property>
+                            <property name="tooltip-text" translatable="yes">Export all tunnels to zip</property>
                             <property name="image">icon_zip</property>
                           </object>
                           <packing>
@@ -351,9 +397,10 @@
                                             <child>
                                               <!-- n-columns=3 n-rows=6 -->
                                               <object class="GtkGrid">
+                                                <property name="row-spacing">6</property>
                                                 <property name="visible">True</property>
                                                 <property name="can-focus">False</property>
-                                                <property name="column-spacing">8</property>
+                                                <property name="column-spacing">12</property>
                                                 <child>
                                                   <object class="GtkLabel">
                                                     <property name="visible">True</property>
@@ -416,10 +463,14 @@
                                                 </child>
                                                 <child>
                                                   <object class="GtkLabel" id="label_interface_status">
+                                                    <property name="tooltip-text">Select to copy this value</property>
+                                                    <property name="max-width-chars">48</property>
+                                                    <property name="ellipsize">end</property>
+                                                    <property name="selectable">True</property>
                                                     <property name="visible">True</property>
                                                     <property name="can-focus">False</property>
                                                     <property name="halign">start</property>
-                                                    <property name="label" translatable="yes">label</property>
+                                                    <property name="label" translatable="yes">—</property>
                                                   </object>
                                                   <packing>
                                                     <property name="left-attach">1</property>
@@ -428,10 +479,14 @@
                                                 </child>
                                                 <child>
                                                   <object class="GtkLabel" id="label_interface_public_key">
+                                                    <property name="tooltip-text">Select to copy this value</property>
+                                                    <property name="max-width-chars">48</property>
+                                                    <property name="ellipsize">end</property>
+                                                    <property name="selectable">True</property>
                                                     <property name="visible">True</property>
                                                     <property name="can-focus">False</property>
                                                     <property name="halign">start</property>
-                                                    <property name="label" translatable="yes">label</property>
+                                                    <property name="label" translatable="yes">—</property>
                                                   </object>
                                                   <packing>
                                                     <property name="left-attach">1</property>
@@ -440,10 +495,14 @@
                                                 </child>
                                                 <child>
                                                   <object class="GtkLabel" id="label_interface_listen_port">
+                                                    <property name="tooltip-text">Select to copy this value</property>
+                                                    <property name="max-width-chars">48</property>
+                                                    <property name="ellipsize">end</property>
+                                                    <property name="selectable">True</property>
                                                     <property name="visible">True</property>
                                                     <property name="can-focus">False</property>
                                                     <property name="halign">start</property>
-                                                    <property name="label" translatable="yes">label</property>
+                                                    <property name="label" translatable="yes">—</property>
                                                   </object>
                                                   <packing>
                                                     <property name="left-attach">1</property>
@@ -452,10 +511,14 @@
                                                 </child>
                                                 <child>
                                                   <object class="GtkLabel" id="label_interface_addresses">
+                                                    <property name="tooltip-text">Select to copy this value</property>
+                                                    <property name="max-width-chars">48</property>
+                                                    <property name="ellipsize">end</property>
+                                                    <property name="selectable">True</property>
                                                     <property name="visible">True</property>
                                                     <property name="can-focus">False</property>
                                                     <property name="halign">start</property>
-                                                    <property name="label" translatable="yes">label</property>
+                                                    <property name="label" translatable="yes">—</property>
                                                   </object>
                                                   <packing>
                                                     <property name="left-attach">1</property>
@@ -464,10 +527,14 @@
                                                 </child>
                                                 <child>
                                                   <object class="GtkLabel" id="label_interface_dns_servers">
+                                                    <property name="tooltip-text">Select to copy this value</property>
+                                                    <property name="max-width-chars">48</property>
+                                                    <property name="ellipsize">end</property>
+                                                    <property name="selectable">True</property>
                                                     <property name="visible">True</property>
                                                     <property name="can-focus">False</property>
                                                     <property name="halign">start</property>
-                                                    <property name="label" translatable="yes">label</property>
+                                                    <property name="label" translatable="yes">—</property>
                                                   </object>
                                                   <packing>
                                                     <property name="left-attach">1</property>
@@ -516,9 +583,12 @@
                                           <object class="GtkLabel">
                                             <property name="visible">True</property>
                                             <property name="can-focus">False</property>
-                                            <property name="label" translatable="yes">  Interface</property>
+                                            <property name="label" translatable="yes">Interface</property>
                                           </object>
                                         </child>
+                                        <style>
+                                          <class name="details-group"/>
+                                        </style>
                                       </object>
                                     </child>
                                   </object>
@@ -565,9 +635,10 @@
                                                 <child>
                                                   <!-- n-columns=3 n-rows=5 -->
                                                   <object class="GtkGrid">
+                                                    <property name="row-spacing">6</property>
                                                     <property name="visible">True</property>
                                                     <property name="can-focus">False</property>
-                                                    <property name="column-spacing">8</property>
+                                                    <property name="column-spacing">12</property>
                                                     <property name="row-homogeneous">True</property>
                                                     <child>
                                                       <object class="GtkLabel">
@@ -631,10 +702,14 @@
                                                     </child>
                                                     <child>
                                                       <object class="GtkLabel" id="label_peer_public_key">
+                                                        <property name="tooltip-text">Select to copy this value</property>
+                                                        <property name="max-width-chars">48</property>
+                                                        <property name="ellipsize">end</property>
+                                                        <property name="selectable">True</property>
                                                         <property name="visible">True</property>
                                                         <property name="can-focus">False</property>
                                                         <property name="halign">start</property>
-                                                        <property name="label" translatable="yes">label</property>
+                                                        <property name="label" translatable="yes">—</property>
                                                       </object>
                                                       <packing>
                                                         <property name="left-attach">1</property>
@@ -643,10 +718,14 @@
                                                     </child>
                                                     <child>
                                                       <object class="GtkLabel" id="label_peer_allowed_ips">
+                                                        <property name="tooltip-text">Select to copy this value</property>
+                                                        <property name="max-width-chars">48</property>
+                                                        <property name="ellipsize">end</property>
+                                                        <property name="selectable">True</property>
                                                         <property name="visible">True</property>
                                                         <property name="can-focus">False</property>
                                                         <property name="halign">start</property>
-                                                        <property name="label" translatable="yes">label</property>
+                                                        <property name="label" translatable="yes">—</property>
                                                       </object>
                                                       <packing>
                                                         <property name="left-attach">1</property>
@@ -655,10 +734,14 @@
                                                     </child>
                                                     <child>
                                                       <object class="GtkLabel" id="label_peer_endpoint">
+                                                        <property name="tooltip-text">Select to copy this value</property>
+                                                        <property name="max-width-chars">48</property>
+                                                        <property name="ellipsize">end</property>
+                                                        <property name="selectable">True</property>
                                                         <property name="visible">True</property>
                                                         <property name="can-focus">False</property>
                                                         <property name="halign">start</property>
-                                                        <property name="label" translatable="yes">label</property>
+                                                        <property name="label" translatable="yes">—</property>
                                                       </object>
                                                       <packing>
                                                         <property name="left-attach">1</property>
@@ -667,10 +750,14 @@
                                                     </child>
                                                     <child>
                                                       <object class="GtkLabel" id="label_peer_latest_handshake">
+                                                        <property name="tooltip-text">Select to copy this value</property>
+                                                        <property name="max-width-chars">48</property>
+                                                        <property name="ellipsize">end</property>
+                                                        <property name="selectable">True</property>
                                                         <property name="visible">True</property>
                                                         <property name="can-focus">False</property>
                                                         <property name="halign">start</property>
-                                                        <property name="label" translatable="yes">label</property>
+                                                        <property name="label" translatable="yes">—</property>
                                                       </object>
                                                       <packing>
                                                         <property name="left-attach">1</property>
@@ -679,10 +766,14 @@
                                                     </child>
                                                     <child>
                                                       <object class="GtkLabel" id="label_peer_transfer">
+                                                        <property name="tooltip-text">Select to copy this value</property>
+                                                        <property name="max-width-chars">48</property>
+                                                        <property name="ellipsize">end</property>
+                                                        <property name="selectable">True</property>
                                                         <property name="visible">True</property>
                                                         <property name="can-focus">False</property>
                                                         <property name="halign">start</property>
-                                                        <property name="label" translatable="yes">label</property>
+                                                        <property name="label" translatable="yes">—</property>
                                                       </object>
                                                       <packing>
                                                         <property name="left-attach">1</property>
@@ -712,9 +803,12 @@
                                               <object class="GtkLabel">
                                                 <property name="visible">True</property>
                                                 <property name="can-focus">False</property>
-                                                <property name="label" translatable="yes">  Peer</property>
+                                                <property name="label" translatable="yes">Peer</property>
                                               </object>
                                             </child>
+                                            <style>
+                                              <class name="details-group"/>
+                                            </style>
                                           </object>
                                         </child>
                                       </object>
@@ -804,10 +898,14 @@
                     <property name="vscroll-policy">natural</property>
                     <child>
                       <object class="GtkListBox" id="wireguard_logs">
+                        <property name="selection-mode">none</property>
                         <property name="visible">True</property>
                         <property name="can-focus">False</property>
                         <property name="hexpand">True</property>
                         <property name="vexpand">True</property>
+                        <style>
+                          <class name="logs"/>
+                        </style>
                       </object>
                     </child>
                   </object>
@@ -815,7 +913,7 @@
               </object>
               <packing>
                 <property name="name">logs</property>
-                <property name="title" translatable="yes">Logs</property>
+                <property name="title" translatable="yes">Log</property>
                 <property name="position">1</property>
               </packing>
             </child>
@@ -833,34 +931,14 @@
       <object class="GtkHeaderBar" id="main_header">
         <property name="visible">True</property>
         <property name="can-focus">False</property>
-        <property name="title" translatable="yes">Wireguird</property>
+        <property name="title" translatable="yes">wireguard-linux-gui</property>
         <property name="subtitle" translatable="yes">Not connected</property>
         <property name="show-close-button">True</property>
-        <child>
-          <object class="GtkStackSwitcher">
-            <property name="visible">True</property>
-            <property name="can-focus">False</property>
-            <property name="stack">main_stack</property>
-          </object>
-        </child>
-        <child>
-          <object class="GtkMenuButton" id="menu">
-            <property name="visible">True</property>
-            <property name="can-focus">True</property>
-            <property name="focus-on-click">False</property>
-            <property name="receives-default">True</property>
-            <property name="use-popover">False</property>
-            <child>
-              <placeholder/>
-            </child>
-          </object>
-          <packing>
-            <property name="pack-type">end</property>
-            <property name="position">1</property>
-          </packing>
-        </child>
       </object>
     </child>
+    <style>
+      <class name="wireguard"/>
+    </style>
   </object>
   <object class="GtkWindow" id="settings_window">
     <property name="can-focus">False</property>
@@ -1012,5 +1090,8 @@
         </child>
       </object>
     </child>
+    <style>
+      <class name="wireguard"/>
+    </style>
   </object>
 </interface>

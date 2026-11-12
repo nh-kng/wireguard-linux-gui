@@ -7,14 +7,14 @@ import (
 	"time"
 
 	"github.com/UnnoTed/go-appindicator"
-	"github.com/UnnoTed/wireguird/gui/countries"
-	"github.com/UnnoTed/wireguird/gui/get"
-	"github.com/UnnoTed/wireguird/static"
 	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
 	"github.com/rs/zerolog/log"
 	"golang.zx2c4.com/wireguard/wgctrl"
+	"wireguard-linux-gui/gui/countries"
+	"wireguard-linux-gui/gui/get"
+	"wireguard-linux-gui/static"
 )
 
 const (
@@ -182,7 +182,7 @@ func createSettings(show bool) (*gtk.Window, error) {
 	}
 
 	if show {
-		settingsWindow.SetTitle("Wireguird - Settings")
+		settingsWindow.SetTitle("wireguard-linux-gui - Settings")
 		settingsWindow.ShowAll()
 	}
 
@@ -219,7 +219,7 @@ func updateCheck() error {
 
 		if tagName, ok := latest["tag_name"].(string); ok && tagName != "v"+Version {
 			glib.IdleAdd(func() {
-				d := gtk.MessageDialogNew(window, gtk.DIALOG_MODAL, gtk.MESSAGE_INFO, gtk.BUTTONS_OK, "Wireguird: update available => "+tagName)
+				d := gtk.MessageDialogNew(window, gtk.DIALOG_MODAL, gtk.MESSAGE_INFO, gtk.BUTTONS_OK, "wireguard-linux-gui: update available => "+tagName)
 				defer d.Destroy()
 
 				d.Run()

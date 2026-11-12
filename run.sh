@@ -1,3 +1,3 @@
 go generate
-go build
-sudo ./wireguird
+go build -o wireguard-linux-gui .
+sudo ./wireguard-linux-gui

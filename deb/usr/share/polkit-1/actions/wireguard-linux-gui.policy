@@ -3,15 +3,15 @@
  "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <policyconfig>
-    <action id="org.freedesktop.policykit.pkexec.wireguird">
+    <action id="org.freedesktop.policykit.pkexec.wireguard-linux-gui">
     <description>Wireguard GUI</description>
-    <message>Authentication is required to run wireguird</message>
+    <message>Authentication is required to run wireguard-linux-gui</message>
     <defaults>
         <allow_any>auth_admin</allow_any>
         <allow_inactive>auth_admin</allow_inactive>
         <allow_active>auth_admin_keep</allow_active>
     </defaults>
-    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/wireguird</annotate>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/wireguard-linux-gui</annotate>
     <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
     </action>
 </policyconfig>

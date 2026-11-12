@@ -9,13 +9,13 @@ import (
 
 	"github.com/UnnoTed/go-appindicator"
 	"github.com/UnnoTed/horizontal"
-	"github.com/UnnoTed/wireguird/gui"
-	"github.com/UnnoTed/wireguird/gui/countries"
-	"github.com/UnnoTed/wireguird/static"
 	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
 	"github.com/rs/zerolog/log"
+	"wireguard-linux-gui/gui"
+	"wireguard-linux-gui/gui/countries"
+	"wireguard-linux-gui/static"
 )
 
 var iconTmpDir = os.TempDir()
@@ -23,20 +23,8 @@ var win *gtk.ApplicationWindow
 
 func main() {
 	if os.Geteuid() != 0 {
-		fmt.Println("\n\n\n\n")
-		fmt.Println("===========================================================================")
-		fmt.Println("===========================================================================")
-		fmt.Println("===========================================================================")
-		fmt.Println("===                                                                     ===")
-		fmt.Println("===                                                                     ===")
-		fmt.Println("=== Wireguird must be ran as root to access /etc/wireguard and wg-quick ===")
-		fmt.Println("=== Use pkexec to run as root:                                          ===")
-		fmt.Println("===  pkexec wireguird                                                   ===")
-		fmt.Println("===                                                                     ===")
-		fmt.Println("===                                                                     ===")
-		fmt.Println("===========================================================================")
-		fmt.Println("===========================================================================")
-		fmt.Println("===========================================================================")
+		fmt.Println("wireguard-linux-gui requires root to access /etc/wireguard and wg-quick.")
+		fmt.Println("Run: pkexec wireguard-linux-gui")
 		return
 	}
 
@@ -50,7 +38,7 @@ func main() {
 		log.Error().Err(err).Msg("error initial settings load")
 	}
 
-	const appID = "com.wireguard.desktop"
+	const appID = "com.wireguard.linuxgui"
 	application, err := gtk.ApplicationNew(appID, glib.APPLICATION_FLAGS_NONE)
 	if err != nil {
 		log.Error().Err(err).Msg("error creating application")
@@ -82,7 +70,7 @@ func createTray(application *gtk.Application) (*appindicator.Indicator, error) {
 		return nil, err
 	}
 
-	iconsDir := "/usr/share/wireguird/Icon/"
+	iconsDir := "/usr/share/wireguard-linux-gui/Icon/"
 	if _, err := os.Stat(iconsDir); os.IsNotExist(err) {
 		iconsDir = iconTmpDir
 		icons := []string{"wireguard_off", "wg_connected"}
@@ -103,8 +91,8 @@ func createTray(application *gtk.Application) (*appindicator.Indicator, error) {
 
 	indicator := appindicator.New(application.GetApplicationID(), "wireguard_off", appindicator.CategoryApplicationStatus)
 	indicator.SetIconThemePath(iconsDir)
-	indicator.SetTitle("Wireguird")
-	// indicator.SetLabel("Wireguird", "")
+	indicator.SetTitle("wireguard-linux-gui")
+	// indicator.SetLabel("wireguard-linux-gui", "")
 	indicator.SetStatus(appindicator.StatusActive)
 	indicator.SetMenu(menu)
 
@@ -128,15 +116,17 @@ func createTray(application *gtk.Application) (*appindicator.Indicator, error) {
 }
 
 func createWindow(application *gtk.Application) error {
-	data, err := static.ReadFile("wireguird.glade")
+	data, err := static.ReadFile("wireguard-linux-gui.glade")
 	if err != nil {
-		log.Error().Err(err).Msg("cant read wireguird.glade")
+		log.Error().Err(err).Msg("cant read wireguard-linux-gui.glade")
 		return err
 	}
 
 	b, err := gtk.BuilderNew()
-	b.AddFromString(string(data))
 	if err != nil {
+		return err
+	}
+	if err := b.AddFromString(string(data)); err != nil {
 		log.Error().Err(err).Msg("error getting main glade file")
 		return err
 	}
@@ -166,17 +156,16 @@ func createWindow(application *gtk.Application) error {
 		return err
 	}
 
-	css.LoadFromData(`
-
-		`)
-	// css.LoadFromPath("./style.css")
+	if err := css.LoadFromData(gui.Stylesheet); err != nil {
+		return err
+	}
 	screen, err := gdk.ScreenGetDefault()
 	if err != nil {
 		log.Error().Err(err).Msg("error getting screen")
 		return err
 	}
 
-	gtk.AddProviderForScreen(screen, css, 1)
+	gtk.AddProviderForScreen(screen, css, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
 	indicator, err := createTray(application)
 	if err != nil {
@@ -192,7 +181,7 @@ func createWindow(application *gtk.Application) error {
 		win.ShowAll()
 	}
 
-	win.SetTitle("Wireguird")
+	win.SetTitle("wireguard-linux-gui")
 
 	return nil
 }

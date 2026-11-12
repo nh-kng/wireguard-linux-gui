@@ -1,44 +1,48 @@
-# wireguird
+# wireguard-linux-gui
 
-##### a linux gtk gui client for [Wireguard](https://www.wireguard.com/)
+A Linux GTK client for [WireGuard](https://www.wireguard.com/), based on
+[wireguird](https://github.com/UnnoTed/wireguird).
 
-________________
-Features:
+The interface follows the [WireGuard Windows client](https://github.com/WireGuard/wireguard-windows):
+compact Tunnels and Log tabs, a tunnel list with an Add Tunnel toolbar, and
+bordered Interface and Peer groups with activation and editing controls.
 
-- System tray icon goes red when connected, black when disconnected.
-- Looks the same and does almost the same things as the official Wireguard's Windows gui client.
-- Lists tunnels from `/etc/wireguard`
-- Controls Wireguard ~~*through*~~ `wg-quick`
+![wireguard-linux-gui interface with example tunnels](preview.png)
 
-## Preview (video)
+- Lists tunnel configurations from `/etc/wireguard` and controls them with `wg-quick`.
+- Imports `.conf` and `.zip` files and exports tunnels to zip.
+- Includes a system tray menu, optional country flags, and remembered connections.
+- Preserves settings from `wireguird.settings` when the new settings file is absent.
+  Saving preferences writes `wireguard-linux-gui.settings`.
 
-[![wireguird preview](https://raw.githubusercontent.com/UnnoTed/wireguird/master/preview.png)](https://streamable.com/dpthpr)
+## Build and run
 
-## Download
+Install the build and runtime dependencies on Debian/Ubuntu:
 
-v0.2.0 tested on: Ubuntu `18.04 LTS`, `20.04 LTS` and `21.04`
-
-[wireguird_amd64.deb (1.8mb)](https://github.com/UnnoTed/wireguird/releases/download/v0.2.0/wireguird_amd64.deb)
-
-v1.0.0 tested on: Ubuntu `22.04 LTS` and `22.10`, Linux Mint `21.1`
-
-[wireguird_amd64.deb (2.6mb)](https://github.com/UnnoTed/wireguird/releases/download/v1.0.0/wireguird_amd64.deb)
-
-v1.1.0 tested on: Ubuntu `23.04`
-
-[wireguird_amd64.deb (2.6mb)](https://github.com/UnnoTed/wireguird/releases/download/v1.1.0/wireguird_amd64.deb)
 ```sh
-wget https://github.com/UnnoTed/wireguird/releases/download/v1.1.0/wireguird_amd64.deb
-sudo dpkg -i ./wireguird_amd64.deb
+sudo apt install wireguard-tools libgtk-3-dev libayatana-appindicator3-dev golang-go resolvconf
 ```
 
-## Compile
-
-deb dependencies: `sudo apt install wireguard-tools libgtk-3-dev libayatana-appindicator3-dev golang-go resolvconf`
+From this checkout:
 
 ```sh
-git clone https://github.com/UnnoTed/wireguird
-cd wireguird
+go generate ./...
+go build -o wireguard-linux-gui .
+sudo ./wireguard-linux-gui
+```
+
+The binary embeds the interface and icons. Root access is needed to read and
+manage tunnel configurations. Installed desktop launchers use `pkexec`.
+
+## Packages
+
+```sh
 go install github.com/goreleaser/goreleaser/v2@latest
 goreleaser release --snapshot --clean
 ```
+
+GoReleaser builds `wireguard-linux-gui` archives, Debian packages, and RPM packages,
+including the renamed desktop launcher, PolicyKit action, and icons.
+
+Historical wireguird releases and the release check still point to the original
+upstream repository. They are not releases of this renamed project.

@@ -20,16 +20,16 @@ import (
 	"github.com/ungerik/go-dry"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
-	"github.com/UnnoTed/wireguird/gui/countries"
-	"github.com/UnnoTed/wireguird/gui/endpoints"
-	"github.com/UnnoTed/wireguird/gui/get"
-	"github.com/UnnoTed/wireguird/settings"
 	"github.com/dustin/go-humanize"
 	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/glib"
 	"github.com/gotk3/gotk3/gtk"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/ini.v1"
+	"wireguard-linux-gui/gui/countries"
+	"wireguard-linux-gui/gui/endpoints"
+	"wireguard-linux-gui/gui/get"
+	"wireguard-linux-gui/settings"
 )
 
 var (
@@ -253,7 +253,7 @@ func (t *Tunnels) Create() error {
 	btnAddTunnel.Connect("clicked", func() {
 		err := func() error {
 			log.Print("btn add tunnel")
-			dialog, err := gtk.FileChooserNativeDialogNew("Wireguird - Choose tunnel files (*.conf, *.zip)", window, gtk.FILE_CHOOSER_ACTION_OPEN, "OK", "Cancel")
+			dialog, err := gtk.FileChooserNativeDialogNew("wireguard-linux-gui - Choose tunnel files (*.conf, *.zip)", window, gtk.FILE_CHOOSER_ACTION_OPEN, "OK", "Cancel")
 			if err != nil {
 				return err
 			}
@@ -368,7 +368,7 @@ func (t *Tunnels) Create() error {
 
 	btnZipTunnels.Connect("clicked", func() {
 		err := func() error {
-			d, err := gtk.FileChooserDialogNewWith2Buttons("Wireguird - zip tunnels -> Save zip file", window, gtk.FILE_CHOOSER_ACTION_SAVE, "Cancel", gtk.RESPONSE_CANCEL, "Save", gtk.RESPONSE_ACCEPT)
+			d, err := gtk.FileChooserDialogNewWith2Buttons("wireguard-linux-gui - zip tunnels -> Save zip file", window, gtk.FILE_CHOOSER_ACTION_SAVE, "Cancel", gtk.RESPONSE_CANCEL, "Save", gtk.RESPONSE_ACCEPT)
 			if err != nil {
 				panic(err)
 			}
@@ -1035,20 +1035,14 @@ func (t *Tunnels) ScanTunnels() error {
 		return err
 	}
 
-	lasti := len(configList) - 1
-	for i, name := range configList {
+	for _, name := range configList {
 		row, err := gtk.ListBoxRowNew()
 		if err != nil {
 			return err
 		}
 		row.SetName(name)
-		row.SetMarginStart(8)
-		row.SetMarginEnd(8)
-		if i == 0 {
-			row.SetMarginTop(8)
-		} else if i == lasti {
-			row.SetMarginBottom(8)
-		}
+		row.SetMarginStart(0)
+		row.SetMarginEnd(0)
 
 		menuItem, err := gtk.CheckMenuItemNewWithLabel(name)
 		if err != nil {
@@ -1177,10 +1171,10 @@ func (t *Tunnels) ScanTunnels() error {
 		}
 		label.SetHAlign(gtk.ALIGN_START)
 
-		label.SetMarginStart(8)
-		label.SetMarginEnd(8)
-		label.SetMarginTop(8)
-		label.SetMarginBottom(8)
+		label.SetMarginStart(4)
+		label.SetMarginEnd(4)
+		label.SetMarginTop(4)
+		label.SetMarginBottom(4)
 
 		box, err := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 4)
 		if err != nil {
@@ -1411,11 +1405,11 @@ func (t *Tunnels) ToggleTunnel(row *gtk.ListBoxRow, name string) error {
 
 func (t *Tunnels) SetPasswordless() error {
 	// not installed
-	if !dry.FileExists("/usr/share/polkit-1/actions/wireguird.policy") {
+	if !dry.FileExists("/usr/share/polkit-1/actions/wireguard-linux-gui.policy") {
 		return nil
 	}
 
-	content, err := ioutil.ReadFile("/usr/share/polkit-1/actions/wireguird.policy")
+	content, err := ioutil.ReadFile("/usr/share/polkit-1/actions/wireguard-linux-gui.policy")
 	if err != nil {
 		return err
 	}
@@ -1434,7 +1428,7 @@ func (t *Tunnels) SetPasswordless() error {
 	}
 
 	if changed {
-		if err := ioutil.WriteFile("/usr/share/polkit-1/actions/wireguird.policy", content, 0644); err != nil {
+		if err := ioutil.WriteFile("/usr/share/polkit-1/actions/wireguard-linux-gui.policy", content, 0644); err != nil {
 			return err
 		}
 	}

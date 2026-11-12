@@ -14,9 +14,10 @@
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
-./wireguird
-./wireguird.glade~
-./wireguird.settings
-./countries.mmdb
+/wireguard-linux-gui
+/wireguard-linux-gui.glade~
+/wireguard-linux-gui.settings
+/wireguird.settings
+/countries.mmdb
 static/ab0x.go
 dist/

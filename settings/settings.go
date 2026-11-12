@@ -9,7 +9,9 @@ import (
 	"github.com/ungerik/go-dry"
 )
 
-const FilePath = "./wireguird.settings"
+const FilePath = "./wireguard-linux-gui.settings"
+
+const legacyFilePath = "./wireguird.settings"
 
 type Settings struct {
 	MultipleTunnels          bool
@@ -55,12 +57,16 @@ func (s *Settings) Save() error {
 
 func (s *Settings) Load() error {
 	log.Debug().Msg("loading settings")
-	if !dry.FileExists(FilePath) {
+	path := FilePath
+	if !dry.FileExists(path) {
+		path = legacyFilePath
+	}
+	if !dry.FileExists(path) {
 		log.Debug().Msg("settings file doesnt exist")
 		return nil
 	}
 
-	data, err := ioutil.ReadFile(FilePath)
+	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		return err
 	}
