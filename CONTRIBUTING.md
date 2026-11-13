@@ -232,6 +232,80 @@ In VS Code, use **Tasks: Run Task** to run these tasks in order:
 The [release workflow](.github/workflows/release.yml) runs GoReleaser when a tag
 is pushed. Use snapshot mode for local package validation.
 
+## Publish a GitHub release
+
+The application version is `Version` in [gui/gui.go](gui/gui.go). Keep it in
+sync with the release tag: version `1.2.0` uses tag `v1.2.0`. GoReleaser derives
+package versions from Git tags; changing the Go constant alone does not change
+the package version. Snapshot builds use the separate `snapshot.version_template`
+in `.goreleaser.yaml` and are development packages.
+
+Before releasing, review changes since the previous tag and write release notes
+in `docs/releases/vVERSION.md`. The [v1.2.0 notes](docs/releases/v1.2.0.md)
+provide an example. Run the relevant unit tests described in [AGENTS.md](AGENTS.md).
+Commit the version, notes, and intended source changes before tagging; uncommitted
+changes are not included in the GitHub build.
+
+Check that `origin` points to the intended fork and choose an unused version:
+
+```sh
+git remote -v
+git tag --sort=-version:refname
+git ls-remote --tags origin
+git log v1.1.0..HEAD --oneline
+git status --short
+```
+
+Once the release commit is ready, push it and its tag (replace `v1.2.0` for
+future releases):
+
+```sh
+git push origin HEAD
+git tag -a v1.2.0 -m "Release v1.2.0"
+git push origin v1.2.0
+```
+
+Ensure GitHub Actions is enabled for the repository, including when using a fork.
+The tag triggers `.github/workflows/release.yml`, which installs native build
+dependencies and runs `goreleaser release --clean`. It builds Linux amd64 `.deb`,
+`.rpm`, and `.tar.gz` assets and publishes them to GitHub Releases. The workflow
+uses the automatic `GITHUB_TOKEN` with `contents: write`; no personal access token
+or GoReleaser Pro license is needed for this workflow.
+
+Watch the **Actions** tab for success and inspect the release's **Assets**.
+The current workflow generates notes from commit history. After it finishes,
+replace those notes with the reviewed file using GitHub CLI (authenticate with
+`gh auth login` first):
+
+```sh
+gh release edit v1.2.0 --repo nh-kng/wireguard-linux-gui \
+  --notes-file docs/releases/v1.2.0.md
+gh release view v1.2.0 --repo nh-kng/wireguard-linux-gui --web
+```
+
+To attach an existing package to an existing release instead:
+
+```sh
+gh release upload v1.2.0 ./dist/wireguard-linux-gui_*.deb \
+  --repo nh-kng/wireguard-linux-gui
+```
+
+Check the package version before uploading with `dpkg-deb --field path/to/package.deb
+Version`. Use a package built from the tagged source with the matching version;
+the ordinary `--snapshot` command above does not produce a stable release package.
+Avoid manually creating the same release while the tag workflow is publishing it.
+
+GitHub Releases hosting and downloads have no storage or bandwidth charge; each
+asset must be under 2 GiB. Standard GitHub-hosted Actions runners are free for
+public repositories. Private repository builds consume the owner's included
+Actions allowance and can incur charges beyond it.
+
+Official references: [GoReleaser GitHub Actions](https://goreleaser.com/customization/ci/actions/),
+[edit release notes](https://cli.github.com/manual/gh_release_edit),
+[upload assets](https://cli.github.com/manual/gh_release_upload),
+[release limits](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases),
+and [Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
+
 ## Troubleshoot missing native dependencies
 
 Verify native dependencies with:
