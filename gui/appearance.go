@@ -38,10 +38,12 @@ func (t *Tunnels) followAppearance() func() {
 				return
 			}
 			style := adw.ColorSchemeDefault
+			// The portal supplies the invoking user's explicit choice. Force it
+			// so Libadwaita cannot override it with the elevated user's settings.
 			if scheme == 1 {
-				style = adw.ColorSchemePreferDark
+				style = adw.ColorSchemeForceDark
 			} else if scheme == 2 {
-				style = adw.ColorSchemePreferLight
+				style = adw.ColorSchemeForceLight
 			}
 			adw.StyleManagerGetDefault().SetColorScheme(style)
 		})
