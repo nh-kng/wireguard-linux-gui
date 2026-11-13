@@ -3,7 +3,7 @@
   "tasks": [
     {
       "label": "Install native build dependencies (Ubuntu/Debian)",
-      "detail": "Install the compiler, pkg-config, GTK/GLib, and Ayatana AppIndicator development packages. Prompts for your sudo password in the terminal.",
+      "detail": "Install the compiler, pkg-config, GTK4, Libadwaita, and GObject introspection development packages. Prompts for your sudo password in the terminal.",
       "type": "process",
       "command": "sudo",
       "args": [
@@ -11,8 +11,9 @@
         "install",
         "build-essential",
         "pkg-config",
-        "libgtk-3-dev",
-        "libayatana-appindicator3-dev"
+        "libgtk-4-dev",
+        "libadwaita-1-dev",
+        "libgirepository1.0-dev"
       ],
       "problemMatcher": [],
       "presentation": {
@@ -45,7 +46,7 @@
     },
     {
       "label": "Build Debian package",
-      "detail": "Build amd64 .deb, .rpm, and .tar.gz artifacts in dist/ without publishing. Clears dist/ first. Requires GoReleaser and GTK/AppIndicator build dependencies.",
+      "detail": "Build amd64 .deb, .rpm, and .tar.gz artifacts in dist/ without publishing. Clears dist/ first. Requires GoReleaser and GTK4/Libadwaita build dependencies.",
       "icon": {
         "id": "package",
         "color": "terminal.ansiGreen"

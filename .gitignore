@@ -15,9 +15,7 @@
 # vendor/
 
 /wireguard-linux-gui
-/wireguard-linux-gui.glade~
 /wireguard-linux-gui.settings
 /wireguird.settings
 /countries.mmdb
-static/ab0x.go
 dist/

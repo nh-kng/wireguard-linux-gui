@@ -1,0 +1,477 @@
+<?xml version="1.0" ?>
+<interface>
+  <requires lib="gtk" version="4.14"/>
+  <requires lib="libadwaita" version="1.5"/>
+  <menu id="main_menu">
+    <section>
+      <item>
+        <attribute name="label">View Log</attribute>
+        <attribute name="action">app.log</attribute>
+      </item>
+      <item>
+        <attribute name="label">Export Tunnels to Zip…</attribute>
+        <attribute name="action">app.export</attribute>
+      </item>
+      <item>
+        <attribute name="label">Refresh Tunnels</attribute>
+        <attribute name="action">app.refresh</attribute>
+      </item>
+    </section>
+    <section>
+      <item>
+        <attribute name="label">Preferences…</attribute>
+        <attribute name="action">app.preferences</attribute>
+      </item>
+      <item>
+        <attribute name="label">About WireGuard</attribute>
+        <attribute name="action">app.about</attribute>
+      </item>
+      <item>
+        <attribute name="label">Quit WireGuard</attribute>
+        <attribute name="action">app.quit</attribute>
+      </item>
+    </section>
+  </menu>
+  <menu id="add_menu">
+    <section>
+      <item>
+        <attribute name="label">Add Empty Tunnel…</attribute>
+        <attribute name="action">app.add</attribute>
+      </item>
+      <item>
+        <attribute name="label">Import Tunnel(s) from File…</attribute>
+        <attribute name="action">app.import</attribute>
+      </item>
+    </section>
+  </menu>
+  <object class="AdwApplicationWindow" id="main_window">
+    <property name="title">WireGuard</property>
+    <property name="default-width">1000</property>
+    <property name="default-height">740</property>
+    <property name="content">
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar">
+            <child type="end">
+              <object class="GtkMenuButton">
+                <property name="icon-name">open-menu-symbolic</property>
+                <property name="menu-model">main_menu</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <property name="content">
+          <object class="GtkPaned">
+            <property name="position">240</property>
+            <property name="resize-start-child">false</property>
+            <property name="shrink-start-child">false</property>
+            <property name="shrink-end-child">false</property>
+            <property name="start-child">
+              <object class="GtkBox">
+                <property name="orientation">vertical</property>
+                <property name="width-request">220</property>
+                <child>
+                  <object class="GtkScrolledWindow">
+                    <property name="vexpand">true</property>
+                    <property name="hscrollbar-policy">never</property>
+                    <property name="child">
+                      <object class="GtkListBox" id="tunnel_list">
+                        <property name="selection-mode">single</property>
+                        <style>
+                          <class name="navigation-sidebar"/>
+                        </style>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkBox">
+                    <child>
+                      <object class="GtkMenuButton">
+                        <property name="icon-name">list-add-symbolic</property>
+                        <property name="menu-model">add_menu</property>
+                        <property name="tooltip-text">Add or import tunnels</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton">
+                        <property name="icon-name">list-remove-symbolic</property>
+                        <property name="action-name">app.remove</property>
+                        <property name="tooltip-text">Remove selected tunnel</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </property>
+            <property name="end-child">
+              <object class="AdwPreferencesPage">
+                <child>
+                  <object class="AdwPreferencesGroup">
+                    <property name="title"/>
+                    <child>
+                      <object class="AdwActionRow" id="profile_heading">
+                        <property name="title">Select a tunnel</property>
+                        <child type="suffix">
+                          <object class="GtkButton" id="button_change_state">
+                            <property name="label">Activate</property>
+                            <property name="action-name">app.toggle</property>
+                            <property name="valign">center</property>
+                            <style>
+                              <class name="suggested-action"/>
+                            </style>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwPreferencesGroup">
+                    <property name="title">Interface</property>
+                    <child>
+                      <object class="AdwActionRow">
+                        <property name="title">Status</property>
+                        <child type="suffix">
+                          <object class="GtkLabel" id="label_interface_status">
+                            <property name="selectable">true</property>
+                            <property name="wrap">true</property>
+                            <property name="xalign">1</property>
+                            <property name="valign">center</property>
+                            <property name="max-width-chars">44</property>
+                            <property name="hexpand">true</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwActionRow">
+                        <property name="title">Public key</property>
+                        <child type="suffix">
+                          <object class="GtkLabel" id="label_interface_public_key">
+                            <property name="selectable">true</property>
+                            <property name="wrap">true</property>
+                            <property name="xalign">1</property>
+                            <property name="valign">center</property>
+                            <property name="max-width-chars">44</property>
+                            <property name="hexpand">true</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwActionRow">
+                        <property name="title">Listen port</property>
+                        <child type="suffix">
+                          <object class="GtkLabel" id="label_interface_listen_port">
+                            <property name="selectable">true</property>
+                            <property name="wrap">true</property>
+                            <property name="xalign">1</property>
+                            <property name="valign">center</property>
+                            <property name="max-width-chars">44</property>
+                            <property name="hexpand">true</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwActionRow">
+                        <property name="title">Addresses</property>
+                        <child type="suffix">
+                          <object class="GtkLabel" id="label_interface_addresses">
+                            <property name="selectable">true</property>
+                            <property name="wrap">true</property>
+                            <property name="xalign">1</property>
+                            <property name="valign">center</property>
+                            <property name="max-width-chars">44</property>
+                            <property name="hexpand">true</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwActionRow">
+                        <property name="title">DNS servers</property>
+                        <child type="suffix">
+                          <object class="GtkLabel" id="label_interface_dns_servers">
+                            <property name="selectable">true</property>
+                            <property name="wrap">true</property>
+                            <property name="xalign">1</property>
+                            <property name="valign">center</property>
+                            <property name="max-width-chars">44</property>
+                            <property name="hexpand">true</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwPreferencesGroup">
+                    <property name="title">Peer</property>
+                    <child>
+                      <object class="AdwActionRow">
+                        <property name="title">Public key</property>
+                        <child type="suffix">
+                          <object class="GtkLabel" id="label_peer_public_key">
+                            <property name="selectable">true</property>
+                            <property name="wrap">true</property>
+                            <property name="xalign">1</property>
+                            <property name="valign">center</property>
+                            <property name="max-width-chars">44</property>
+                            <property name="hexpand">true</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwActionRow">
+                        <property name="title">Allowed IPs</property>
+                        <child type="suffix">
+                          <object class="GtkLabel" id="label_peer_allowed_ips">
+                            <property name="selectable">true</property>
+                            <property name="wrap">true</property>
+                            <property name="xalign">1</property>
+                            <property name="valign">center</property>
+                            <property name="max-width-chars">44</property>
+                            <property name="hexpand">true</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwActionRow">
+                        <property name="title">Endpoint</property>
+                        <child type="suffix">
+                          <object class="GtkLabel" id="label_peer_endpoint">
+                            <property name="selectable">true</property>
+                            <property name="wrap">true</property>
+                            <property name="xalign">1</property>
+                            <property name="valign">center</property>
+                            <property name="max-width-chars">44</property>
+                            <property name="hexpand">true</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwActionRow">
+                        <property name="title">Persistent keepalive</property>
+                        <child type="suffix">
+                          <object class="GtkLabel" id="label_peer_keepalive">
+                            <property name="selectable">true</property>
+                            <property name="wrap">true</property>
+                            <property name="xalign">1</property>
+                            <property name="valign">center</property>
+                            <property name="max-width-chars">44</property>
+                            <property name="hexpand">true</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwActionRow">
+                        <property name="title">Latest handshake</property>
+                        <child type="suffix">
+                          <object class="GtkLabel" id="label_peer_latest_handshake">
+                            <property name="selectable">true</property>
+                            <property name="wrap">true</property>
+                            <property name="xalign">1</property>
+                            <property name="valign">center</property>
+                            <property name="max-width-chars">44</property>
+                            <property name="hexpand">true</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="AdwActionRow">
+                        <property name="title">Transfer</property>
+                        <child type="suffix">
+                          <object class="GtkLabel" id="label_peer_transfer">
+                            <property name="selectable">true</property>
+                            <property name="wrap">true</property>
+                            <property name="xalign">1</property>
+                            <property name="valign">center</property>
+                            <property name="max-width-chars">44</property>
+                            <property name="hexpand">true</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwPreferencesGroup">
+                    <property name="title"/>
+                    <child>
+                      <object class="AdwActionRow">
+                        <property name="title">Configuration</property>
+                        <child type="suffix">
+                          <object class="GtkButton">
+                            <property name="label">Edit…</property>
+                            <property name="action-name">app.edit</property>
+                            <property name="valign">center</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </property>
+          </object>
+        </property>
+      </object>
+    </property>
+  </object>
+  <object class="AdwPreferencesWindow" id="settings_window">
+    <property name="title">Preferences</property>
+    <property name="default-width">620</property>
+    <property name="default-height">640</property>
+    <property name="hide-on-close">true</property>
+    <child>
+      <object class="AdwPreferencesPage">
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title">General</property>
+            <child>
+              <object class="AdwSwitchRow" id="settings_multiple_active_tunnels">
+                <property name="title">Allow multiple active tunnels</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="settings_start_tray">
+                <property name="title">Start in the system tray</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="settings_check_updates">
+                <property name="title">Check for updates</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="settings_country_flags">
+                <property name="title">Show country flags</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="settings_remember_connected">
+                <property name="title">Remember connected tunnels</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="settings_polkit_policy">
+                <property name="title">Allow passwordless management</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+  <object class="AdwWindow" id="editor_window">
+    <property name="title">Edit tunnel</property>
+    <property name="default-width">700</property>
+    <property name="default-height">620</property>
+    <property name="hide-on-close">true</property>
+    <property name="content">
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar">
+            <child type="start">
+              <object class="GtkButton">
+                <property name="label">Cancel</property>
+                <property name="action-name">app.editor-cancel</property>
+              </object>
+            </child>
+            <child type="end">
+              <object class="GtkButton">
+                <property name="label">Save</property>
+                <property name="action-name">app.editor-save</property>
+                <style>
+                  <class name="suggested-action"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+        <property name="content">
+          <object class="GtkBox">
+            <property name="orientation">vertical</property>
+            <child>
+              <object class="GtkBox">
+                <property name="orientation">vertical</property>
+                <child>
+                  <object class="GtkLabel">
+                    <property name="label">_Tunnel name</property>
+                    <property name="use-underline">true</property>
+                    <property name="mnemonic-widget">editor_name</property>
+                    <property name="xalign">0</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkEntry" id="editor_name">
+                    <property name="placeholder-text">1–15 characters</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkBox">
+                <property name="orientation">vertical</property>
+                <child>
+                  <object class="GtkLabel">
+                    <property name="label">Interface public key</property>
+                    <property name="mnemonic-widget">editor_publickey</property>
+                    <property name="xalign">0</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkEntry" id="editor_publickey">
+                    <property name="editable">false</property>
+                    <property name="placeholder-text">Interface public key</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkScrolledWindow">
+                <property name="vexpand">true</property>
+                <property name="child">
+                  <object class="GtkTextView" id="editor_text">
+                    <property name="monospace">true</property>
+                  </object>
+                </property>
+              </object>
+            </child>
+          </object>
+        </property>
+      </object>
+    </property>
+  </object>
+  <object class="AdwWindow" id="log_window">
+    <property name="title">WireGuard Log</property>
+    <property name="default-width">800</property>
+    <property name="default-height">480</property>
+    <property name="hide-on-close">true</property>
+    <property name="content">
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar"/>
+        </child>
+        <property name="content">
+          <object class="GtkScrolledWindow">
+            <property name="child">
+              <object class="GtkTextView" id="log_text">
+                <property name="editable">false</property>
+                <property name="monospace">true</property>
+                <property name="wrap-mode">word-char</property>
+              </object>
+            </property>
+          </object>
+        </property>
+      </object>
+    </property>
+  </object>
+</interface>

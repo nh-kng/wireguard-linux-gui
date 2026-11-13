@@ -24,29 +24,30 @@ the dependencies are already installed:
 
 ```sh
 sudo apt update
-sudo apt install build-essential pkg-config wireguard-tools libgtk-3-dev libayatana-appindicator3-dev golang-go resolvconf
+sudo apt install build-essential pkg-config wireguard-tools libgtk-4-dev libadwaita-1-dev libgirepository1.0-dev resolvconf
 ```
 
-The application's Go version requirement is declared in [go.mod](go.mod).
+Install Go 1.24 or newer separately; Ubuntu 24.04's default `golang-go` package
+is too old. The requirement is declared in [go.mod](go.mod).
 GoReleaser may require a newer Go toolchain when installed from source.
 
-GTK 3 pulls in the GLib development files. Ayatana AppIndicator provides the
-system tray integration. These native libraries are required because the GUI
-uses CGO.
+GTK4 and Libadwaita provide the native interface. GObject introspection is
+required by the Go bindings. The tray uses D-Bus directly and needs no GTK3
+or AppIndicator library. An elevated launch opens its desktop-bus sockets through
+a short-lived child running as the invoking user; WireGuard operations remain
+in the privileged process. Builds use CGO and require Go 1.24 or newer.
 
 ## Build and run
 
 Run from the repository root:
 
 ```sh
-go generate ./...
 go build -o wireguard-linux-gui .
 sudo ./wireguard-linux-gui
 ```
 
-Generation creates the GTK builder helpers and embeds the interface and icons.
-Rerun it after changing the Glade file or embedded assets. The generated
-`static/ab0x.go` is ignored by Git.
+The GTK4 Builder XML and icons are embedded by `go build`; no generation step
+is needed. Edit `gui/window.ui` for layout changes.
 
 Root access is needed to read and manage tunnel configurations. Installed desktop
 launchers use `pkexec`.
@@ -69,7 +70,7 @@ sudo mkdir -p /usr/share/wireguard-linux-gui
 sudo cp -a Icon /usr/share/wireguard-linux-gui/
 ```
 
-Launch **wireguard-linux-gui** from Applications, then check:
+Launch **WireGuard** from Applications, then check:
 
 - Closing the window and launching again shows the existing window with one
   tray icon. The tray's **Manage Tunnels** action also reopens it.
@@ -86,17 +87,17 @@ Choose **Quit** from the running app's tray menu, then run from the repository
 root:
 
 ```sh
-go generate ./... &&
 go build -o wireguard-linux-gui . &&
-sudo install -Dm755 ./wireguard-linux-gui /usr/bin/wireguard-linux-gui
+sudo install -Dm755 ./wireguard-linux-gui /usr/bin/wireguard-linux-gui &&
+sudo install -Dm644 deb/usr/share/applications/wireguard-linux-gui.desktop /usr/share/applications/wireguard-linux-gui.desktop
 ```
 
-The `&&` operators ensure installation only happens if generation and the build
-succeed. Reopen **wireguard-linux-gui** from Applications afterward.
+The `&&` operators ensure installation only continues if the preceding step
+succeeds. Reopen **WireGuard** from Applications afterward.
 
-For code or interface changes, only the binary needs replacing. Repeat the
-desktop launcher, PolicyKit policy, or icon installation commands above only
-when those files change. You do not need to rerun `apt install` for dependencies
+The commands also refresh the desktop launcher's display name. Repeat the
+PolicyKit policy or icon installation commands above when those files change.
+You do not need to rerun `apt install` for dependencies
 that are already installed or rebuild a `.deb` package for this local workflow.
 
 For package testing, build the packages below and install the chosen `.deb` with
@@ -104,10 +105,9 @@ For package testing, build the packages below and install the chosen `.deb` with
 
 ## Check your changes
 
-Format changed Go files with `gofmt`, then generate assets and run the tests:
+Format changed Go files with `gofmt`, then run the tests:
 
 ```sh
-go generate ./...
 go test ./...
 go build -o wireguard-linux-gui .
 ```
@@ -116,8 +116,27 @@ The settings, endpoint, instance, and status polling tests can run without GTK
 dependencies:
 
 ```sh
-go test -race ./settings ./gui/endpoints ./internal/instance ./internal/statuspoll
+go test -race ./settings ./gui/endpoints ./internal/instance ./internal/statuspoll ./internal/tray ./internal/desktopbus
 ```
+
+Run the isolated native UI integration test from a graphical session:
+
+```sh
+dbus-run-session -- env WG_GUI_TEST=1 go test ./gui -run TestNativeUI -v
+```
+
+It uses temporary configuration and settings directories and does not activate
+real tunnels or alter the installed PolicyKit policy. The tray and desktop-bus tests use a
+private D-Bus daemon to check menus, watcher restarts, and socket handoff. Real `wg-quick`
+activation can also be tested safely in a private network namespace:
+
+```sh
+go test -c -o /tmp/wireguard-gui-test ./gui
+sudo unshare --net -- env WG_NET_TEST=1 /tmp/wireguard-gui-test -test.run TestWireGuardNamespace -test.v
+```
+
+This test refuses to run in the host network namespace and uses temporary
+configuration files. It does not change existing VPN interfaces or routes.
 
 For interface changes, launch the application in a graphical session and check
 the affected controls. Include screenshots in the pull request when useful.
@@ -158,37 +177,31 @@ is pushed. Use snapshot mode for local package validation.
 
 ## Troubleshoot missing native dependencies
 
-If the build reports missing `gio-2.0`, `glib-2.0`, or `gobject-2.0`, install
-`libgtk-3-dev`, which depends on `libglib2.0-dev`. If it reports missing
-`ayatana-appindicator3-0.1`, install `libayatana-appindicator3-dev`.
-
-Verify that `pkg-config` can find all required libraries:
+Verify native dependencies with:
 
 ```sh
-pkg-config --modversion gio-2.0 glib-2.0 gobject-2.0 gtk+-3.0 ayatana-appindicator3-0.1
+pkg-config --modversion gtk4 libadwaita-1 gobject-introspection-1.0
 ```
 
-Then rerun the build or package task.
+Install `libgtk-4-dev`, `libadwaita-1-dev`, and `libgirepository1.0-dev` if a
+library is missing. The first build compiles large generated CGO bindings and
+can take several minutes. Use `go build -v -o wireguard-linux-gui .` to show
+progress. Pin the bindings in `go.mod`; newer branches may require newer native
+libraries than Ubuntu 24.04 provides.
 
-### GTK warnings or a quiet first build
+### Remove obsolete GTK3 build dependencies
 
-Warnings about `g_binding_get_source` or `g_binding_get_target` being deprecated
-come from the gotk3 dependency. These warnings alone do not stop the build.
-The first build compiles the GTK bindings through CGO and can take several
-minutes without printing output. `fileb0x: no changes detected` also indicates
-that generation succeeded and the embedded assets are already current.
-
-To show package compilation progress, run:
+Install and verify the GTK4 dependencies first, then inspect a simulation:
 
 ```sh
-go generate ./... &&
-go build -v -o wireguard-linux-gui . &&
-sudo install -Dm755 ./wireguard-linux-gui /usr/bin/wireguard-linux-gui
+apt-get -s remove libgtk-3-dev libayatana-appindicator3-dev libayatana-ido3-dev libayatana-indicator3-dev
+sudo apt-get remove libgtk-3-dev libayatana-appindicator3-dev libayatana-ido3-dev libayatana-indicator3-dev
 ```
 
-Wait for the command to finish; pressing Ctrl+C (`^C`) interrupts compilation
-and skips installation. Later builds reuse Go's compilation cache. If the build
-exits with an error, include the final error output when reporting it.
+Retain GTK3 runtime libraries and the GNOME AppIndicator extension used by other
+applications. Only remove additional orphan packages when they were installed
+for this project and are not required by the new build or other software.
+Do not run unrestricted `apt autoremove` as part of this migration.
 
 ## Submit a pull request
 

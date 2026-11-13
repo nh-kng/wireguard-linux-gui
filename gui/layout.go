@@ -1,245 +1,60 @@
 package gui
 
 import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
-	"github.com/gotk3/gotk3/gdk"
-	"github.com/gotk3/gotk3/glib"
-	"github.com/gotk3/gotk3/gtk"
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
-	"wireguard-linux-gui/gui/get"
+	"github.com/diamondburned/gotk4/pkg/core/glib"
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
+	glibv2 "github.com/diamondburned/gotk4/pkg/glib/v2"
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/rs/zerolog/log"
+	"wireguard-linux-gui/gui/countries"
+	"wireguard-linux-gui/internal/tray"
 )
 
-// Keep all entry points wired to the same actions as the window controls.
-func clickButton(id string) {
-	if b, err := get.Button(id); err == nil && b.GetSensitive() {
-		b.Clicked()
-	}
-}
-
-func addMenuAction(menu *gtk.Menu, title string, action func(), controls ...*gtk.Button) error {
-	item, err := gtk.MenuItemNewWithLabel(title)
-	if err != nil {
-		return err
-	}
-	item.Connect("activate", action)
-	for _, control := range controls {
-		control := control
-		sync := func() { item.SetSensitive(control.GetSensitive()) }
-		sync()
-		control.Connect("notify::sensitive", sync)
-	}
-	menu.Append(item)
-	return nil
-}
-
-func menuSeparator(menu *gtk.Menu) error {
-	item, err := gtk.SeparatorMenuItemNew()
-	if err != nil {
-		return err
-	}
-	menu.Append(item)
-	return nil
-}
-
-func showAbout() {
-	d := gtk.MessageDialogNew(window, gtk.DIALOG_MODAL, gtk.MESSAGE_INFO, gtk.BUTTONS_CLOSE, "WireGuard Linux GUI\nVersion %s\nA native GTK client for WireGuard on Linux.", Version)
-	d.SetTitle("About WireGuard")
-	d.Run()
-	d.Destroy()
-}
-
-func (t *Tunnels) createStatusMenu() error {
-	menu := indicator.GetMenu()
-	var err error
-	t.menuStatus, err = gtk.MenuItemNewWithLabel("Status: Reading…")
-	if err != nil {
-		return err
-	}
-	t.menuStatus.SetSensitive(false)
-	menu.Append(t.menuStatus)
-	t.menuNetworks, err = gtk.MenuItemNewWithLabel("Networks: None")
-	if err != nil {
-		return err
-	}
-	t.menuNetworks.SetSensitive(false)
-	t.menuNetworks.SetNoShowAll(true)
-	menu.Append(t.menuNetworks)
-	t.menuDeactivate, err = gtk.MenuItemNewWithLabel("Deactivate")
-	if err != nil {
-		return err
-	}
-	t.menuDeactivate.SetNoShowAll(true)
-	menu.Append(t.menuDeactivate)
-	t.menuDeactivate.Connect("activate", func() {
-		// Snapshot the devices because toggling requests a new background status.
-		for _, d := range t.devices {
-			if err := t.ToggleTunnel(nil, d.Name); err != nil {
-				ShowError(window, err)
-				return
+func (t *Tunnels) bindActions() {
+	functions := map[string]func(){
+		"manage": t.Present, "quit": func() { t.app.Quit() }, "refresh": func() { ShowError(t.ScanTunnels()) },
+		"add": func() { ShowError(t.openEditor("")) }, "edit": func() {
+			if row := t.list.SelectedRow(); row != nil {
+				ShowError(t.openEditor(row.Name()))
 			}
+		},
+		"toggle": func() { ShowError(t.ToggleTunnel(t.list.SelectedRow(), "")) },
+		"remove": t.removeSelected, "import": t.importTunnels, "export": t.exportTunnels,
+		"log": func() { t.logs.Present() }, "preferences": func() { t.fromSettings(); t.preferences.Present() },
+		"about": func() {
+			message(&t.window.Window, "WireGuard Linux GUI", "Version "+Version+"\nA native GTK4/Libadwaita client for WireGuard.\nMIT license; bindings use MPL-2.0.", nil)
+		},
+		"editor-cancel": t.cancelEditor, "editor-save": func() { ShowError(t.saveEditor()) },
+	}
+	for name, f := range functions {
+		f := f
+		a := gio.NewSimpleAction(name, nil)
+		a.ConnectActivate(func(_ *glibv2.Variant) { f() })
+		t.app.AddAction(a)
+		t.actions[name] = a
+	}
+	t.app.SetAccelsForAction("app.refresh", []string{"F5"})
+	t.app.SetAccelsForAction("app.quit", []string{"<Control>q"})
+	t.app.SetAccelsForAction("app.import", []string{"<Control>o"})
+	t.app.SetAccelsForAction("app.preferences", []string{"<Control>comma"})
+	key := gtk.NewEventControllerKey()
+	key.ConnectKeyPressed(func(value, code uint, state gdk.ModifierType) bool {
+		if value == gdk.KEY_Escape {
+			t.cancelEditor()
+			return true
 		}
+		return false
 	})
-	if err := menuSeparator(menu); err != nil {
-		return err
-	}
-	if err := menuSeparator(menu); err != nil {
-		return err
-	}
-	for _, action := range []struct {
-		title string
-		run   func()
-	}{
-		{"Manage Tunnels", func() { application.Activate() }},
-		{"Import Tunnel(s) from File…", func() { application.Activate(); clickButton("button_add_tunnel") }},
-	} {
-		if err := addMenuAction(menu, action.title, action.run); err != nil {
-			return err
-		}
-	}
-	if err := menuSeparator(menu); err != nil {
-		return err
-	}
-	if err := addMenuAction(menu, "About WireGuard", showAbout); err != nil {
-		return err
-	}
-	if err := addMenuAction(menu, "Quit WireGuard", func() { application.Quit() }); err != nil {
-		return err
-	}
-	menu.ShowAll()
-	return nil
+	t.editor.AddController(key)
 }
-
-func (t *Tunnels) createLayoutMenus() error {
-	editorWindow.SetTransientFor(window)
-	settingsWindow.SetTransientFor(window)
-	logs, err := get.Window("log_window")
-	if err != nil {
-		return err
-	}
-	logs.SetTransientFor(window)
-	logs.HideOnDelete()
-	showLog := func() { logs.ShowAll(); logs.Present() }
-	importTunnel := func() { clickButton("button_add_tunnel") }
-	exportTunnels := func() { clickButton("button_zip_tunnel") }
-	exportControl, err := get.Button("button_zip_tunnel")
-	if err != nil {
-		return err
-	}
-	actions, err := gtk.MenuNew()
-	if err != nil {
-		return err
-	}
-	for _, a := range []struct {
-		title string
-		run   func()
-	}{
-		{"View Log", showLog}, {"Export Tunnels to Zip…", exportTunnels},
-		{"Settings…", func() { settingsWindow.ShowAll(); settingsWindow.Present() }},
-	} {
-		var controls []*gtk.Button
-		if a.title == "Export Tunnels to Zip…" {
-			controls = append(controls, exportControl)
-		}
-		if err := addMenuAction(actions, a.title, a.run, controls...); err != nil {
-			return err
-		}
-	}
-	actions.ShowAll()
-	actionButton, err := get.MenuButton("menu")
-	if err != nil {
-		return err
-	}
-	actionButton.SetPopup(actions)
-	add, err := gtk.MenuNew()
-	if err != nil {
-		return err
-	}
-	addEmpty := func() {
-		if err := t.addEmptyTunnel(); err != nil {
-			ShowError(window, err)
-		}
-	}
-	if err := addMenuAction(add, "Add Empty Tunnel…", addEmpty); err != nil {
-		return err
-	}
-	if err := addMenuAction(add, "Import Tunnel(s) from File…", importTunnel); err != nil {
-		return err
-	}
-	add.ShowAll()
-	addButton, err := get.MenuButton("add_menu")
-	if err != nil {
-		return err
-	}
-	addButton.SetPopup(add)
-	bar, err := gtk.MenuBarNew()
-	if err != nil {
-		return err
-	}
-	type menuAction struct {
-		title  string
-		run    func()
-		button string
-	}
-	sections := []struct {
-		name  string
-		items []menuAction
-	}{
-		{"WireGuard", []menuAction{{"About WireGuard", showAbout, ""}, {"Settings…", func() { settingsWindow.ShowAll(); settingsWindow.Present() }, ""}, {"Quit WireGuard", func() { application.Quit() }, ""}}},
-		{"File", []menuAction{{"Add Empty Tunnel…", addEmpty, ""}, {"Import Tunnel(s) from File…", importTunnel, ""}, {"Export Tunnels to Zip…", exportTunnels, "button_zip_tunnel"}, {"Close Window", func() { window.Hide() }, ""}}},
-		{"Tunnel", []menuAction{{"Activate", func() { clickButton("button_change_state") }, "button_change_state"}, {"Edit…", func() { clickButton("button_edit_tunnel") }, "button_edit_tunnel"}, {"Remove Tunnel", func() { clickButton("button_del_tunnel") }, "button_del_tunnel"}}},
-		{"Window", []menuAction{{"Manage Tunnels", func() { application.Activate() }, ""}, {"View Log", showLog, ""}}},
-	}
-	for _, section := range sections {
-		if section.name == "Tunnel" {
-			if err := appendEditMenu(bar); err != nil {
-				return err
-			}
-		}
-		parent, err := gtk.MenuItemNewWithLabel(section.name)
-		if err != nil {
-			return err
-		}
-		menu, err := gtk.MenuNew()
-		if err != nil {
-			return err
-		}
-		for _, a := range section.items {
-			a := a // Go 1.21: callbacks must keep their own action.
-			item, err := gtk.MenuItemNewWithLabel(a.title)
-			if err != nil {
-				return err
-			}
-			item.Connect("activate", a.run)
-			menu.Append(item)
-			if a.button != "" {
-				control, err := get.Button(a.button)
-				if err != nil {
-					return err
-				}
-				syncState := func() {
-					item.SetSensitive(control.GetSensitive())
-					if a.button == "button_change_state" {
-						text, _ := control.GetLabel()
-						item.SetLabel(text)
-					}
-				}
-				syncState()
-				control.Connect("notify::sensitive", syncState)
-				control.Connect("notify::label", syncState)
-			}
-		}
-		parent.SetSubmenu(menu)
-		bar.Append(parent)
-	}
-	box, err := get.Box("application_menu")
-	if err != nil {
-		return err
-	}
-	box.Add(bar)
-	return nil
-}
-
 func uniqueNetworks(networks []string) []string {
 	sort.Strings(networks)
 	result := networks[:0]
@@ -250,145 +65,173 @@ func uniqueNetworks(networks []string) []string {
 	}
 	return result
 }
-
-func (t *Tunnels) applySelectionState(row *gtk.ListBoxRow) {
-	selected := row != nil
-	if !selected {
-		t.UnknownLabels()
-		t.setInterfaceState("—")
-		if label, err := get.Label("label_interface_name"); err == nil {
-			label.SetText("Select a tunnel")
-		}
-		if label, err := get.Label("label_peer_keepalive"); err == nil {
-			label.SetText("—")
-		}
-	}
-	for _, id := range []string{"button_edit_tunnel", "button_del_tunnel"} {
-		if b, err := get.Button(id); err == nil {
-			b.SetSensitive(selected)
-		}
-	}
-	t.ButtonChangeState.SetSensitive(selected && t.statusAvailable)
-}
-
-func (t *Tunnels) setInterfaceState(state string) {
-	t.Interface.Status.SetText(state)
-	icon, err := get.Image("interface_status_icon")
-	if err != nil {
-		return
-	}
-	image := t.grayIcon
-	if state == "Active" {
-		image = t.greenIcon
-	}
-	if image != nil {
-		icon.SetFromPixbuf(image.GetPixbuf())
+func (t *Tunnels) fromSettings() {
+	t.syncingSettings = true
+	defer func() { t.syncingSettings = false }()
+	for id, v := range map[string]bool{"multiple_active_tunnels": Settings.MultipleTunnels, "start_tray": Settings.StartOnTray, "check_updates": Settings.CheckUpdates, "country_flags": Settings.CountryFlags, "remember_connected": Settings.RememberConnectedServers, "polkit_policy": Settings.Passwordless} {
+		t.switches[id].SetActive(v)
 	}
 }
-
-func (t *Tunnels) addEmptyTunnel() error {
-	key, err := wgtypes.GeneratePrivateKey()
-	if err != nil {
-		return err
-	}
-	t.editingName = ""
-	name, err := get.Entry("editor_name")
-	if err != nil {
-		return err
-	}
-	name.SetText("")
-	publicKey, err := get.Entry("editor_publickey")
-	if err != nil {
-		return err
-	}
-	publicKey.SetText(key.PublicKey().String())
-	text, err := get.TextView("editor_text")
-	if err != nil {
-		return err
-	}
-	buffer, err := text.GetBuffer()
-	if err != nil {
-		return err
-	}
-	buffer.SetText("[Interface]\nPrivateKey = " + key.String() + "\n\n[Peer]\nPublicKey = \nAllowedIPs = \nEndpoint = \n")
-	editorWindow.SetTitle("Add Empty Tunnel")
-	editorWindow.ShowAll()
-	editorWindow.Present()
-	name.GrabFocus()
-	return nil
-}
-
-func loadStatusIcon(path string) (*gtk.Image, error) {
-	image, err := loadEmbeddedImage(path)
-	if err != nil {
-		return nil, err
-	}
-	pixbuf, err := image.GetPixbuf().ScaleSimple(10, 10, gdk.INTERP_BILINEAR)
-	if err != nil {
-		return nil, err
-	}
-	image.SetFromPixbuf(pixbuf)
-	return image, nil
-}
-
-func appendEditMenu(bar *gtk.MenuBar) error {
-	parent, err := gtk.MenuItemNewWithLabel("Edit")
-	if err != nil {
-		return err
-	}
-	menu, err := gtk.MenuNew()
-	if err != nil {
-		return err
-	}
-	for _, action := range []struct{ title, signal string }{{"Cut", "cut-clipboard"}, {"Copy", "copy-clipboard"}, {"Paste", "paste-clipboard"}, {"Select All", "select-all"}} {
-		action := action
-		item, err := gtk.MenuItemNewWithLabel(action.title)
-		if err != nil {
+func (t *Tunnels) saveSettings() error {
+	previous := *Settings
+	Settings.MultipleTunnels = t.switches["multiple_active_tunnels"].Active()
+	Settings.StartOnTray = t.switches["start_tray"].Active()
+	Settings.CheckUpdates = t.switches["check_updates"].Active()
+	Settings.CountryFlags = t.switches["country_flags"].Active()
+	Settings.RememberConnectedServers = t.switches["remember_connected"].Active()
+	Settings.Passwordless = t.switches["polkit_policy"].Active()
+	policyChanged := previous.Passwordless != Settings.Passwordless
+	if policyChanged {
+		if err := t.SetPasswordless(); err != nil {
+			*Settings = previous
+			t.fromSettings()
 			return err
 		}
-		item.Connect("activate", func() {
-			focus, err := window.GetFocus()
-			if err != nil {
-				return
-			}
-			switch widget := focus.(type) {
-			case *gtk.Label:
-				if action.signal == "select-all" {
-					widget.SelectRegion(0, -1)
-				} else if action.signal == "copy-clipboard" {
-					widget.Emit(action.signal, glib.TYPE_NONE)
-				}
-			case *gtk.Entry:
-				if action.signal == "select-all" {
-					widget.SelectRegion(0, -1)
-				} else {
-					widget.Emit(action.signal, glib.TYPE_NONE)
-				}
-			case *gtk.TextView:
-				if action.signal == "select-all" {
-					buffer, err := widget.GetBuffer()
-					if err == nil {
-						buffer.SelectRange(buffer.GetStartIter(), buffer.GetEndIter())
-					}
-				} else {
-					widget.Emit(action.signal, glib.TYPE_NONE)
-				}
-			}
-		})
-		menu.Connect("show", func() {
-			focus, _ := window.GetFocus()
-			sensitive := false
-			switch focus.(type) {
-			case *gtk.Entry, *gtk.TextView:
-				sensitive = true
-			case *gtk.Label:
-				sensitive = action.signal == "copy-clipboard" || action.signal == "select-all"
-			}
-			item.SetSensitive(sensitive)
-		})
-		menu.Append(item)
 	}
-	parent.SetSubmenu(menu)
-	bar.Append(parent)
+	if err := Settings.Save(); err != nil {
+		*Settings = previous
+		t.fromSettings()
+		if policyChanged {
+			err = errors.Join(err, t.SetPasswordless())
+		}
+		return err
+	}
+	if !previous.CountryFlags && Settings.CountryFlags {
+		go func() {
+			if err := countries.OpenDatabase(); err != nil {
+				ShowError(err)
+			}
+		}()
+	}
+	if previous.CountryFlags != Settings.CountryFlags {
+		return t.ScanTunnels()
+	}
 	return nil
+}
+func (t *Tunnels) restoreConnections() {
+	defer func() { t.reconnectedRememberedServers = true }()
+	if !Settings.RememberConnectedServers {
+		return
+	}
+	ds, err := wgc.Devices()
+	if err != nil {
+		log.Error().Err(err).Msg("skip remembered tunnels")
+		return
+	}
+	active := deviceNames(ds)
+	if !Settings.MultipleTunnels && len(active) > 0 {
+		return
+	}
+	names := []string{}
+	for name := range Settings.ConnectedServers {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		a, b := names[i], names[j]
+		if Settings.ConnectedServers[a] == Settings.ConnectedServers[b] {
+			return a < b
+		}
+		return Settings.ConnectedServers[a] > Settings.ConnectedServers[b]
+	})
+	for _, name := range names {
+		if contains(active, name) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(TunnelsPath, name+".conf")); err != nil {
+			continue
+		}
+		ShowError(t.ToggleTunnel(nil, name))
+		if !Settings.MultipleTunnels {
+			break
+		}
+	}
+}
+func contains(values []string, value string) bool {
+	for _, v := range values {
+		if v == value {
+			return true
+		}
+	}
+	return false
+}
+func (t *Tunnels) updateTray() {
+	names := deviceNames(t.devices)
+	active := len(names) > 0
+	state := "Inactive"
+	if active {
+		state = "Active"
+	}
+	if !t.statusAvailable {
+		state = "Unavailable"
+	}
+	items := []tray.Item{{Key: "status", Label: "Status: " + state, Visible: true}}
+	if active && t.statusAvailable {
+		networks := []string{}
+		for _, d := range t.devices {
+			for _, p := range d.Peers {
+				for _, ip := range p.AllowedIPs {
+					networks = append(networks, ip.String())
+				}
+			}
+		}
+		networks = uniqueNetworks(networks)
+		if len(networks) == 0 {
+			networks = []string{"None"}
+		}
+		label := "Deactivate"
+		if len(names) > 1 {
+			label = "Deactivate All"
+		}
+		items = append(items, tray.Item{Key: "networks", Label: "Networks: " + strings.Join(networks, ", "), Visible: true}, tray.Item{Key: "deactivate", Label: label, Visible: true, Enabled: true, Activate: func() {
+			ShowError(t.deactivateAll())
+		}})
+	}
+	items = append(items, tray.Item{Separator: true, Visible: true})
+	for i := 0; ; i++ {
+		row := t.list.RowAtIndex(i)
+		if row == nil {
+			break
+		}
+		name := row.Name()
+		items = append(items, tray.Item{Key: "tunnel:" + name, Label: name, Enabled: t.statusAvailable, Visible: true, Checkable: true, Checked: contains(names, name), Activate: func() { ShowError(t.ToggleTunnel(nil, name)) }})
+	}
+	items = append(items, tray.Item{Separator: true, Visible: true})
+	for _, a := range []struct{ label, action string }{{"Manage Tunnels", "manage"}, {"Import Tunnel(s) from File…", "import"}, {"About WireGuard", "about"}, {"Quit WireGuard", "quit"}} {
+		action := a.action
+		items = append(items, tray.Item{Key: "action:" + action, Label: a.label, Enabled: true, Visible: true, Activate: func() {
+			if action == "import" {
+				t.Present()
+			}
+			t.actions[action].Activate(nil)
+		}})
+	}
+	icon := "wireguard-inactive-symbolic"
+	if active && t.statusAvailable {
+		icon = "wireguard-active-symbolic"
+	}
+	t.tray.Update(icon, fmt.Sprintf("WireGuard — %s", state), items)
+}
+func (t *Tunnels) RefreshStatus() {
+	if t.statusPoller == nil || t.closed {
+		return
+	}
+	t.cancelStatusTimer()
+	t.statusPoller.Refresh()
+}
+func (t *Tunnels) cancelStatusTimer() {
+	if t.statusTimer != 0 {
+		glib.SourceRemove(t.statusTimer)
+		t.statusTimer = 0
+	}
+}
+func (t *Tunnels) scheduleStatusRefresh() {
+	t.cancelStatusTimer()
+	if t.closed {
+		return
+	}
+	interval := uint(5000)
+	if t.window.Visible() {
+		interval = 1000
+	}
+	t.statusTimer = glib.TimeoutAdd(interval, func() bool { t.statusTimer = 0; t.RefreshStatus(); return false })
 }

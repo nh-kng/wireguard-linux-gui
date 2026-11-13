@@ -22,6 +22,7 @@ var (
 	initErr error
 	once    sync.Once // OpenDatabase runs once
 	db      *maxminddb.Reader
+	dbMu    sync.RWMutex
 
 	ready      = make(chan struct{})
 	dnsCache   = map[string]string{}
@@ -49,7 +50,9 @@ func OpenDatabase() error {
 		}
 
 		var err error
+		dbMu.Lock()
 		db, err = maxminddb.Open(mmdbFile)
+		dbMu.Unlock()
 		if err != nil {
 			initErr = fmt.Errorf("failed to open country database: %w", err)
 			return
@@ -93,7 +96,10 @@ func Find(ipStr string) (string, error) {
 		return "", fmt.Errorf("database initialization failed: %w", initErr)
 	}
 
-	if val, ok := dnsCache[ipStr]; ok {
+	dnsCacheMu.Lock()
+	val, ok := dnsCache[ipStr]
+	dnsCacheMu.Unlock()
+	if ok {
 		log.Debug().Str("ip", ipStr).Str("country", val).Msg("country found in cache")
 		return val, nil
 	}
@@ -104,7 +110,13 @@ func Find(ipStr string) (string, error) {
 	}
 
 	var record IPRecord
+	dbMu.RLock()
+	if db == nil {
+		dbMu.RUnlock()
+		return "", fmt.Errorf("country database closed")
+	}
 	err := db.Lookup(ip, &record)
+	dbMu.RUnlock()
 	if err != nil {
 		return "", fmt.Errorf("error during database lookup: %w", err)
 	}
@@ -127,7 +139,10 @@ func Find(ipStr string) (string, error) {
 }
 
 func CloseDatabase() {
+	dbMu.Lock()
+	defer dbMu.Unlock()
 	if db != nil {
 		db.Close()
+		db = nil
 	}
 }

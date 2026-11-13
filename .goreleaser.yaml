@@ -1,13 +1,9 @@
 version: 2
 project_name: wireguard-linux-gui
 
-before:
-  hooks:
-    - go generate ./...
-
 builds:
   - id: wireguard-linux-gui
-    main: ./main.go
+    main: .
     binary: wireguard-linux-gui
     env:
       - CGO_ENABLED=1
@@ -21,12 +17,12 @@ archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
+      - THIRD_PARTY_NOTICES.md
+      - licenses/*
       - src: ./deb/usr/share/applications/wireguard-linux-gui.desktop
         dst: /usr/share/applications/wireguard-linux-gui.desktop
       - src: ./deb/usr/share/polkit-1/actions/wireguard-linux-gui.policy
         dst: /usr/share/polkit-1/actions/wireguard-linux-gui.policy
-      # - src: ./deb/usr/local/bin/wireguard-linux-gui
-        # dst: /usr/local/bin/wireguard-linux-gui
       - src: ./Icon/**/*
         dst: /usr/share/wireguard-linux-gui/Icon/
 
@@ -35,7 +31,7 @@ nfpms:
     package_name: wireguard-linux-gui
     vendor: "UnnoTed"
     maintainer: "UnnoTed"
-    description: "GTK GUI for Wireguard"
+    description: "GTK4/Libadwaita GUI for WireGuard"
     license: "MIT"
     homepage: "https://github.com/UnnoTed/wireguird"
     formats: [deb]
@@ -43,16 +39,20 @@ nfpms:
     dependencies:
       - wireguard-tools
       - resolvconf
-      - libayatana-appindicator3-1
+      - libgtk-4-1 (>= 4.14)
+      - libadwaita-1-0 (>= 1.5)
     contents: &app_contents
+      - src: ./THIRD_PARTY_NOTICES.md
+        dst: /usr/share/doc/wireguard-linux-gui/THIRD_PARTY_NOTICES.md
+      - src: ./licenses/
+        dst: /usr/share/doc/wireguard-linux-gui/licenses/
+        type: tree
       - src: ./deb/usr/share/applications/wireguard-linux-gui.desktop
         dst: /usr/share/applications/wireguard-linux-gui.desktop
       - src: ./deb/usr/share/polkit-1/actions/wireguard-linux-gui.policy
         dst: /usr/share/polkit-1/actions/wireguard-linux-gui.policy
         file_info:
           mode: 0644
-      # - src: ./deb/usr/local/bin/wireguard-linux-gui
-        # dst: /usr/local/bin/wireguard-linux-gui
       - src: ./Icon/
         dst: /usr/share/wireguard-linux-gui/Icon/
         type: tree
@@ -61,14 +61,15 @@ nfpms:
     package_name: wireguard-linux-gui
     vendor: "UnnoTed"
     maintainer: "UnnoTed"
-    description: "GTK GUI for Wireguard"
+    description: "GTK4/Libadwaita GUI for WireGuard"
     license: "MIT"
     homepage: "https://github.com/UnnoTed/wireguird"
     formats: [rpm]
     bindir: /usr/bin
     dependencies:
       - wireguard-tools
-      - libappindicator-gtk3
+      - gtk4 >= 4.14
+      - libadwaita >= 1.5
     contents: *app_contents
 
 release:
