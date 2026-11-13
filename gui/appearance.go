@@ -4,6 +4,7 @@ import (
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/core/glib"
 	"github.com/godbus/dbus/v5"
+	"github.com/rs/zerolog/log"
 	"wireguard-linux-gui/internal/desktopbus"
 )
 
@@ -12,11 +13,13 @@ import (
 func (t *Tunnels) followAppearance() func() {
 	conn, err := desktopbus.Connect(t.sessionAddress)
 	if err != nil {
+		log.Warn().Err(err).Msg("connect to desktop appearance settings")
 		return func() {}
 	}
 	signals := make(chan *dbus.Signal, 8)
 	conn.Signal(signals)
 	if err = conn.AddMatchSignal(dbus.WithMatchSender("org.freedesktop.portal.Desktop"), dbus.WithMatchInterface("org.freedesktop.portal.Settings"), dbus.WithMatchMember("SettingChanged")); err != nil {
+		log.Warn().Err(err).Msg("watch desktop appearance settings")
 		conn.Close()
 		return func() {}
 	}
@@ -50,8 +53,10 @@ func (t *Tunnels) followAppearance() func() {
 	}
 	go func() {
 		var value dbus.Variant
-		if conn.Object("org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop").Call("org.freedesktop.portal.Settings.Read", 0, "org.freedesktop.appearance", "color-scheme").Store(&value) == nil {
+		if err := conn.Object("org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop").Call("org.freedesktop.portal.Settings.Read", 0, "org.freedesktop.appearance", "color-scheme").Store(&value); err == nil {
 			apply(value)
+		} else {
+			log.Warn().Err(err).Msg("read desktop appearance settings")
 		}
 		for signal := range signals {
 			if len(signal.Body) == 3 && signal.Body[0] == "org.freedesktop.appearance" && signal.Body[1] == "color-scheme" {

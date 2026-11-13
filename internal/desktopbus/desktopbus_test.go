@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/godbus/dbus/v5"
@@ -138,6 +139,18 @@ func TestHelperSendsCredentialByte(t *testing.T) {
 		}
 		if creds.Uid != uint32(os.Getuid()) || creds.Pid == int32(os.Getpid()) {
 			t.Fatalf("credentials were not sent by the helper: %+v", creds)
+		}
+		if err := syscall.Kill(int(creds.Pid), 0); err != nil {
+			t.Fatalf("desktop services cannot inspect the live helper: %v", err)
+		}
+		if err := conn.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := syscall.Kill(int(creds.Pid), 0); err != syscall.ESRCH {
+			t.Fatalf("helper was not reaped when its connection closed: %v", err)
+		}
+		if err := conn.Close(); err != nil {
+			t.Fatalf("repeated close: %v", err)
 		}
 		return
 	}

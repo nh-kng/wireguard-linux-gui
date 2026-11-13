@@ -4,12 +4,14 @@ package desktopbus
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
 	"os/user"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -42,6 +44,8 @@ func Address() string {
 
 // RunHelper handles the private socket-opening mode before application startup.
 // The child has already dropped to the desktop UID. It never accesses WireGuard.
+// It stays alive until the parent closes the connection so desktop services can
+// inspect the process associated with the socket's credentials.
 func RunHelper(args []string) (handled bool, err error) {
 	if len(args) < 2 || args[1] != helperArgument {
 		return false, nil
@@ -75,6 +79,10 @@ func RunHelper(args []string) (handled bool, err error) {
 	}
 	defer file.Close()
 	_, _, err = control.(*net.UnixConn).WriteMsgUnix([]byte{1}, unix.UnixRights(int(file.Fd())), nil)
+	if err != nil {
+		return true, err
+	}
+	_, err = io.Copy(io.Discard, control)
 	return true, err
 }
 
@@ -86,8 +94,8 @@ func Connect(address string) (*dbus.Conn, error) {
 	if os.Geteuid() != 0 || uid == 0 {
 		return dbus.Connect(address)
 	}
-	// A session daemon rejects root's socket credentials. A short-lived child opens
-	// the socket as the invoking user and passes the descriptor back to this process.
+	// A session daemon rejects root's socket credentials. A child opens the socket
+	// as the invoking user and stays alive while this process uses the descriptor.
 	// No credentials are changed on the GTK thread or any other parent thread.
 	expected := fmt.Sprintf("unix:path=/run/user/%d/bus", uid)
 	if address != expected {
@@ -134,7 +142,12 @@ func openAsUser(path string, uid, gid uint32) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer parent.Close()
+	keepParent := false
+	defer func() {
+		if !keepParent {
+			parent.Close()
+		}
+	}()
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -157,13 +170,17 @@ func openAsUser(path string, uid, gid uint32) (net.Conn, error) {
 	if readErr != nil {
 		cmd.Process.Kill()
 	}
-	waitErr := cmd.Wait()
 	if readErr != nil {
-		return nil, fmt.Errorf("desktop bus helper: %w", readErr)
+		cmd.Wait()
+		return nil, fmt.Errorf("desktop bus helper: %w: %s", readErr, stderr.String())
 	}
-	if waitErr != nil {
-		return nil, fmt.Errorf("desktop bus helper: %w: %s", waitErr, stderr.String())
-	}
+	// On every subsequent failure, close the control socket and reap the child.
+	defer func() {
+		if !keepParent {
+			parent.Close()
+			cmd.Wait()
+		}
+	}()
 	if n != 1 {
 		return nil, fmt.Errorf("desktop bus helper returned no socket")
 	}
@@ -185,9 +202,32 @@ func openAsUser(path string, uid, gid uint32) (net.Conn, error) {
 		file := os.NewFile(uintptr(rights[0]), "desktop-session-bus")
 		socket, e := net.FileConn(file)
 		file.Close()
-		return socket, e
+		if e != nil {
+			return nil, e
+		}
+		parent.SetReadDeadline(time.Time{})
+		keepParent = true
+		return &helperConnection{Conn: socket, control: parent, command: cmd}, nil
 	}
 	return nil, fmt.Errorf("desktop bus helper returned no descriptor")
+}
+
+// Closing the bus also releases and reaps its credential-bearing helper.
+type helperConnection struct {
+	net.Conn
+	control net.Conn
+	command *exec.Cmd
+	once    sync.Once
+	err     error
+}
+
+func (c *helperConnection) Close() error {
+	c.once.Do(func() {
+		c.err = c.Conn.Close()
+		c.control.Close()
+		c.command.Wait()
+	})
+	return c.err
 }
 
 // The helper already sent the credential-bearing NUL byte. Consume the
