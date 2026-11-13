@@ -46,7 +46,6 @@ func (t *Tunnels) ScanTunnels() error {
 		icon.SetVisible(t.statusAvailable && contains(deviceNames(t.devices), name))
 		icon.SetTooltipText("Active tunnel")
 		t.icons[name] = icon
-		box.Append(icon)
 		flag := gtk.NewImage()
 		flag.SetPixelSize(20)
 		flag.SetVAlign(gtk.AlignCenter)
@@ -55,7 +54,9 @@ func (t *Tunnels) ScanTunnels() error {
 		box.Append(flag)
 		label := gtk.NewLabel(name)
 		label.SetXAlign(0)
+		label.SetHExpand(true)
 		box.Append(label)
+		box.Append(icon)
 		row.SetChild(box)
 		t.list.Append(row)
 		if name == t.lastSelected {
