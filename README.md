@@ -10,7 +10,8 @@ The baseline platform is Ubuntu 24.04 with GTK 4.14 and Libadwaita 1.5.
 
 ![Tunnel screen showing the office demo profile active, its interface and peer details, latest handshake, and transfer counters](preview.png)
 
-*The screenshots use example profiles and simulated connection activity.
+*The screenshots show the GTK4/Libadwaita app on Ubuntu with the Yaru theme,
+using example profiles and simulated connection activity.
 No real VPN endpoint or private key is shown.*
 
 [Installation](#installation) · [Usage](#usage) · [Preferences](#preferences) ·
@@ -117,6 +118,8 @@ For removal, see [uninstallation instructions](CONTRIBUTING.md#remove-a-local-de
 5. Check **Latest handshake** and **Transfer** for peer activity. Choose
    **Deactivate** when you want to disconnect.
 
+<img src="docs/screenshots/add-menu.png" alt="Add menu opening above the plus button with Add Empty Tunnel and Import Tunnel(s) from File options" width="1000">
+
 Imports preserve existing profiles: a duplicate filename is rejected. Tunnel
 names must contain 1–15 letters, numbers, or `_ = + . -` characters, without the
 `.conf` extension; `.` and `..` are not valid names.
@@ -133,6 +136,12 @@ Choose **+ → Add Empty Tunnel…** to generate a private key and start a profi
 Give it a name, fill in the configuration supplied by your administrator, and
 choose **Save**. Select an existing tunnel and use **Edit**, below its details,
 to change its name or configuration text.
+
+| New tunnel | Edit tunnel |
+| --- | --- |
+| <img src="docs/screenshots/new-tunnel.png" alt="Add Empty Tunnel window with a blank tunnel name, interface public key, and starter configuration" width="480"> | <img src="docs/screenshots/edit-tunnel.png" alt="Edit Tunnel window showing the office example profile name, public key, and configuration" width="480"> |
+
+*Private keys are redacted in the editor screenshots.*
 
 For example, a split tunnel can route only the office networks through WireGuard:
 
@@ -180,7 +189,7 @@ tunnel before removing it if you also want to disconnect.
 
 Open **Preferences…** from the header menu or press `Ctrl+,`.
 
-<img src="docs/screenshots/preferences.png" alt="Preferences window with Cancel and Save buttons and seven options for tunnels, startup, updates, country flags, and passwordless management" width="620">
+<img src="docs/screenshots/preferences.png" alt="Preferences window with Cancel and Save buttons and seven options for tunnels, startup, updates, country flags, and passwordless management" width="1000">
 
 | Preference | Default on a fresh setup | Behavior |
 | --- | --- | --- |
@@ -214,16 +223,19 @@ and saving writes `Hidden=true`. Desktop-menu launches preserve a custom
 ## System tray
 
 The WireGuard dragon icon is dimmed when inactive and uses the panel's foreground
-color when active, following the panel's light/dark theme.
+color when active, following the panel's light/dark theme. The desktop's
+StatusNotifier host renders the tray menu, so its styling can differ from the
+GTK4 app window. The tray screenshots below use GNOME's AppIndicator host.
 
-| Active | Inactive |
-| --- | --- |
-| ![Active WireGuard panel icon](docs/screenshots/tray-active-icon.png)<br>![Active tray menu showing status, routed networks, Deactivate, and a checked office tunnel](docs/screenshots/tray-active.png) | ![Inactive WireGuard panel icon](docs/screenshots/tray-inactive-icon.png)<br>![Inactive tray menu showing inactive status and unchecked tunnels](docs/screenshots/tray-inactive.png) |
+| Active | Inactive | No tunnels |
+| --- | --- | --- |
+| ![Active WireGuard panel icon](docs/screenshots/tray-active-icon.png)<br>![Active tray menu showing status, Deactivate, and routed networks beside the checked office tunnel](docs/screenshots/tray-active.png) | ![Inactive WireGuard panel icon](docs/screenshots/tray-inactive-icon.png)<br>![Inactive tray menu showing inactive status and unchecked tunnels](docs/screenshots/tray-inactive.png) | ![Tray menu with no tunnels and one separator between status and menu actions](docs/screenshots/tray-empty.png) |
 
 The tray menu shows **Status**, tunnel checkmarks, **Manage Tunnels**, import,
-About, and Quit. When active, it also shows **Networks** and **Deactivate**
-(**Deactivate All** for several interfaces). Tunnel actions are disabled when
-live status is unavailable.
+About, and Quit. Active tunnels show their routed networks beside their names.
+When active, the menu also shows **Deactivate** (**Deactivate All** for several
+interfaces). Tunnel actions are disabled when live status is unavailable. With no
+tunnels, a single separator divides the status from the menu actions.
 
 Closing the window keeps the app in the tray when a StatusNotifier host is
 available. Choose **Manage Tunnels** or launch the app again to reopen the

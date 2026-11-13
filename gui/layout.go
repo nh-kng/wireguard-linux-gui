@@ -279,24 +279,26 @@ func (t *Tunnels) updateTray() {
 		state = "Unavailable"
 	}
 	items := []tray.Item{{Key: "status", Label: "Status: " + state, Visible: true}}
+	networksByTunnel := make(map[string]string)
 	if active && t.statusAvailable {
-		networks := []string{}
 		for _, d := range t.devices {
+			networks := []string{}
 			for _, p := range d.Peers {
 				for _, ip := range p.AllowedIPs {
 					networks = append(networks, ip.String())
 				}
 			}
-		}
-		networks = uniqueNetworks(networks)
-		if len(networks) == 0 {
-			networks = []string{"None"}
+			networks = uniqueNetworks(networks)
+			if len(networks) == 0 {
+				networks = []string{"None"}
+			}
+			networksByTunnel[d.Name] = strings.Join(networks, ", ")
 		}
 		label := "Deactivate"
 		if len(names) > 1 {
 			label = "Deactivate All"
 		}
-		items = append(items, tray.Item{Key: "networks", Label: "Networks: " + strings.Join(networks, ", "), Visible: true}, tray.Item{Key: "deactivate", Label: label, Visible: true, Enabled: true, Activate: func() {
+		items = append(items, tray.Item{Key: "deactivate", Label: label, Visible: true, Enabled: true, Activate: func() {
 			ShowError(t.deactivateAll())
 		}})
 	}
@@ -307,9 +309,15 @@ func (t *Tunnels) updateTray() {
 			break
 		}
 		name := row.Name()
-		items = append(items, tray.Item{Key: "tunnel:" + name, Label: name, Enabled: t.statusAvailable, Visible: true, Checkable: true, Checked: contains(names, name), Activate: func() { ShowError(t.ToggleTunnel(nil, name)) }})
+		label := name
+		if networks, ok := networksByTunnel[name]; ok {
+			label += " — " + networks
+		}
+		items = append(items, tray.Item{Key: "tunnel:" + name, Label: label, Enabled: t.statusAvailable, Visible: true, Checkable: true, Checked: contains(names, name), Activate: func() { ShowError(t.ToggleTunnel(nil, name)) }})
 	}
-	items = append(items, tray.Item{Separator: true, Visible: true})
+	if t.list.RowAtIndex(0) != nil {
+		items = append(items, tray.Item{Separator: true, Visible: true})
+	}
 	for _, a := range []struct{ label, action string }{{"Manage Tunnels", "manage"}, {"Import Tunnel(s) from File…", "import"}, {"About WireGuard", "about"}, {"Quit WireGuard", "quit"}} {
 		action := a.action
 		items = append(items, tray.Item{Key: "action:" + action, Label: a.label, Enabled: true, Visible: true, Activate: func() {

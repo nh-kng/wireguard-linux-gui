@@ -90,8 +90,9 @@
                       <class name="toolbar"/>
                     </style>
                     <child>
-                      <object class="GtkMenuButton">
+                      <object class="GtkMenuButton" id="add_button">
                         <property name="icon-name">list-add-symbolic</property>
+                        <property name="direction">up</property>
                         <property name="menu-model">add_menu</property>
                         <property name="tooltip-text">Add or import tunnels</property>
                       </object>
