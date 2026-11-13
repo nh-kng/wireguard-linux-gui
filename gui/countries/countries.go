@@ -42,7 +42,7 @@ func OpenDatabase() error {
 		log.Debug().Msg("initializing country database")
 
 		// downloads the db when doesnt exist or is older than a week
-		if s, err := os.Stat(mmdbFile); os.IsNotExist(err) || s.ModTime().Before(time.Now().Add(-7*24*time.Hour)) {
+		if s, err := os.Stat(mmdbFile); err != nil || s.ModTime().Before(time.Now().Add(-7*24*time.Hour)) {
 			if err := downloadDatabase(); err != nil {
 				initErr = fmt.Errorf("failed to download country database: %w", err)
 				return
@@ -65,7 +65,8 @@ func OpenDatabase() error {
 }
 
 func downloadDatabase() error {
-	resp, err := http.Get(mmdbURL)
+	client := http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(mmdbURL)
 	if err != nil {
 		return fmt.Errorf("failed to download mmdb: %w", err)
 	}
@@ -75,10 +76,11 @@ func downloadDatabase() error {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	out, err := os.Create(mmdbFile)
+	out, err := os.CreateTemp(".", "countries-*.mmdb")
 	if err != nil {
 		return fmt.Errorf("failed to create local file: %w", err)
 	}
+	defer os.Remove(out.Name())
 	defer out.Close()
 
 	_, err = io.Copy(out, resp.Body)
@@ -86,7 +88,10 @@ func downloadDatabase() error {
 		return fmt.Errorf("failed to write data to disk: %w", err)
 	}
 
-	return nil
+	if err := out.Close(); err != nil {
+		return err
+	}
+	return os.Rename(out.Name(), mmdbFile)
 }
 
 func Find(ipStr string) (string, error) {

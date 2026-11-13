@@ -86,6 +86,9 @@
                 </child>
                 <child>
                   <object class="GtkBox">
+                    <style>
+                      <class name="toolbar"/>
+                    </style>
                     <child>
                       <object class="GtkMenuButton">
                         <property name="icon-name">list-add-symbolic</property>
@@ -325,50 +328,84 @@
       </object>
     </property>
   </object>
-  <object class="AdwPreferencesWindow" id="settings_window">
+  <object class="AdwWindow" id="settings_window">
     <property name="title">Preferences</property>
     <property name="default-width">620</property>
     <property name="default-height">640</property>
     <property name="hide-on-close">true</property>
-    <child>
-      <object class="AdwPreferencesPage">
-        <child>
-          <object class="AdwPreferencesGroup">
-            <property name="title">General</property>
-            <child>
-              <object class="AdwSwitchRow" id="settings_multiple_active_tunnels">
-                <property name="title">Allow multiple active tunnels</property>
+    <property name="content">
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar">
+            <child type="start">
+              <object class="GtkButton">
+                <property name="label">Cancel</property>
+                <property name="action-name">app.preferences-cancel</property>
               </object>
             </child>
-            <child>
-              <object class="AdwSwitchRow" id="settings_start_tray">
-                <property name="title">Start in the system tray</property>
-              </object>
-            </child>
-            <child>
-              <object class="AdwSwitchRow" id="settings_check_updates">
-                <property name="title">Check for updates</property>
-              </object>
-            </child>
-            <child>
-              <object class="AdwSwitchRow" id="settings_country_flags">
-                <property name="title">Show country flags</property>
-              </object>
-            </child>
-            <child>
-              <object class="AdwSwitchRow" id="settings_remember_connected">
-                <property name="title">Remember connected tunnels</property>
-              </object>
-            </child>
-            <child>
-              <object class="AdwSwitchRow" id="settings_polkit_policy">
-                <property name="title">Allow passwordless management</property>
+            <child type="end">
+              <object class="GtkButton">
+                <property name="label">Save</property>
+                <property name="action-name">app.preferences-save</property>
+                <style>
+                  <class name="suggested-action"/>
+                </style>
               </object>
             </child>
           </object>
         </child>
+        <property name="content">
+          <object class="AdwPreferencesPage">
+            <child>
+              <object class="AdwPreferencesGroup">
+                <property name="title">General</property>
+                <child>
+                  <object class="AdwSwitchRow" id="settings_multiple_active_tunnels">
+                    <property name="title">Allow multiple active tunnels</property>
+                    <property name="subtitle">Keep more than one tunnel connected at once.</property>
+                    <property name="subtitle-lines">1</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwSwitchRow" id="settings_start_tray">
+                    <property name="title">Start in the system tray</property>
+                    <property name="subtitle">Hide the main window when the app starts.</property>
+                    <property name="subtitle-lines">1</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwSwitchRow" id="settings_check_updates">
+                    <property name="title">Check for updates</property>
+                    <property name="subtitle">Notify about releases of the original wireguird project.</property>
+                    <property name="subtitle-lines">1</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwSwitchRow" id="settings_remember_connected">
+                    <property name="title">Remember connected tunnels</property>
+                    <property name="subtitle">Reconnect remembered tunnels when the app starts.</property>
+                    <property name="subtitle-lines">1</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwSwitchRow" id="settings_country_flags">
+                    <property name="title">Show country flags</property>
+                    <property name="subtitle">Show each tunnel endpoint’s country in the tunnel list.</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwSwitchRow" id="settings_polkit_policy">
+                    <property name="title">Allow passwordless management</property>
+                    <property name="subtitle">Open and manage the app without a password prompt.</property>
+                    <property name="subtitle-lines">1</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </property>
       </object>
-    </child>
+    </property>
   </object>
   <object class="AdwWindow" id="editor_window">
     <property name="title">Edit tunnel</property>
@@ -399,9 +436,15 @@
         <property name="content">
           <object class="GtkBox">
             <property name="orientation">vertical</property>
+            <property name="spacing">18</property>
+            <property name="margin-start">18</property>
+            <property name="margin-end">18</property>
+            <property name="margin-top">18</property>
+            <property name="margin-bottom">18</property>
             <child>
               <object class="GtkBox">
                 <property name="orientation">vertical</property>
+                <property name="spacing">6</property>
                 <child>
                   <object class="GtkLabel">
                     <property name="label">_Tunnel name</property>
@@ -420,6 +463,7 @@
             <child>
               <object class="GtkBox">
                 <property name="orientation">vertical</property>
+                <property name="spacing">6</property>
                 <child>
                   <object class="GtkLabel">
                     <property name="label">Interface public key</property>
@@ -438,9 +482,14 @@
             <child>
               <object class="GtkScrolledWindow">
                 <property name="vexpand">true</property>
+                <property name="has-frame">true</property>
                 <property name="child">
                   <object class="GtkTextView" id="editor_text">
                     <property name="monospace">true</property>
+                    <property name="left-margin">12</property>
+                    <property name="right-margin">12</property>
+                    <property name="top-margin">12</property>
+                    <property name="bottom-margin">12</property>
                   </object>
                 </property>
               </object>

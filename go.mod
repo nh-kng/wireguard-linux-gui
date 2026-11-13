@@ -24,6 +24,7 @@ require (
 	github.com/mdlayher/genetlink v1.3.1 // indirect
 	github.com/mdlayher/netlink v1.7.1 // indirect
 	github.com/mdlayher/socket v0.4.0 // indirect
+	github.com/stretchr/testify v1.9.0 // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20231121144256-b99613f794b6 // indirect
 	golang.org/x/crypto v0.7.0 // indirect
 	golang.org/x/net v0.8.0 // indirect

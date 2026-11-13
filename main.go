@@ -13,7 +13,6 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/rs/zerolog/log"
 	"wireguard-linux-gui/gui"
-	"wireguard-linux-gui/gui/countries"
 	"wireguard-linux-gui/internal/desktopbus"
 	"wireguard-linux-gui/internal/instance"
 )
@@ -31,7 +30,6 @@ func run() int {
 		fmt.Fprintln(os.Stderr, "Run: pkexec wireguard-linux-gui (root is required for /etc/wireguard and wg-quick)")
 		return 1
 	}
-	defer countries.CloseDatabase()
 	if err := gui.Settings.Init(); err != nil {
 		log.Error().Err(err).Msg("load settings")
 	}

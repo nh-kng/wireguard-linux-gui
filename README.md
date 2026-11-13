@@ -12,7 +12,8 @@ bundled theme. The baseline is Ubuntu 24.04 (GTK 4.14 and Libadwaita 1.5).
 
 - Lists tunnel configurations from `/etc/wireguard` and controls them with `wg-quick`.
 - Imports `.conf` and `.zip` files and exports tunnels to zip.
-- Includes a system tray menu, optional country flags, and remembered connections.
+- Includes a system tray menu and remembers connected tunnels by default.
+- Allows multiple active tunnels by default; disable this in Preferences if needed.
 - Preserves settings from `wireguird.settings` when the new settings file is absent.
   Saving preferences writes `wireguard-linux-gui.settings`.
 
@@ -32,6 +33,12 @@ Use **+** to add an empty tunnel or import WireGuard `.conf` and `.zip` files.
 Select a tunnel to inspect its Interface and Peer fields, then activate it.
 Use **−** to remove it and the header menu for View Log, export, and preferences. The Edit
 button sits below the details panel.
+
+Preferences has **Cancel** and **Save** in its title bar. Country flags
+preview immediately when toggled; **Cancel** restores the saved preference.
+Closing Preferences with unsaved changes offers **Keep Editing**, **Discard**,
+or **Save**. Country flags use the endpoint's IP location and download a country
+database when first enabled.
 
 Closing the window keeps the app in the system tray when a StatusNotifier host
 is available (Ubuntu includes one). Without a host, the window stays accessible

@@ -2,22 +2,16 @@ package gui
 
 import (
 	"fmt"
-	"io/fs"
-	"net"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
-	"github.com/diamondburned/gotk4/pkg/core/glib"
-	"github.com/diamondburned/gotk4/pkg/gdk/v4"
-	glibv2 "github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/dustin/go-humanize"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"gopkg.in/ini.v1"
-	"wireguard-linux-gui/gui/countries"
 )
 
 func (t *Tunnels) ScanTunnels() error {
@@ -25,8 +19,6 @@ func (t *Tunnels) ScanTunnels() error {
 	if err != nil {
 		return err
 	}
-	t.generation++
-	generation := t.generation
 	for {
 		row := t.list.RowAtIndex(0)
 		if row == nil {
@@ -35,6 +27,7 @@ func (t *Tunnels) ScanTunnels() error {
 		t.list.Remove(row)
 	}
 	t.icons = map[string]*gtk.Image{}
+	t.flags = map[string]*gtk.Image{}
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".conf") {
 			continue
@@ -42,46 +35,24 @@ func (t *Tunnels) ScanTunnels() error {
 		name := strings.TrimSuffix(entry.Name(), ".conf")
 		row := gtk.NewListBoxRow()
 		row.SetName(name)
-		box := gtk.NewBox(gtk.OrientationHorizontal, 0)
-		icon := gtk.NewImageFromIconName("network-vpn-symbolic")
+		box := gtk.NewBox(gtk.OrientationHorizontal, 8)
+		box.SetMarginStart(6)
+		box.SetMarginEnd(6)
+		box.SetMarginTop(4)
+		box.SetMarginBottom(4)
+		icon := gtk.NewImageFromIconName("object-select-symbolic")
 		icon.SetPixelSize(16)
+		icon.SetVAlign(gtk.AlignCenter)
+		icon.SetVisible(t.statusAvailable && contains(deviceNames(t.devices), name))
+		icon.SetTooltipText("Active tunnel")
 		t.icons[name] = icon
 		box.Append(icon)
-		if Settings.CountryFlags {
-			flag := gtk.NewImage()
-			flag.SetPixelSize(20)
-			box.Append(flag)
-			if cfg, e := ini.Load(TunnelsPath + entry.Name()); e == nil {
-				endpoint := cfg.Section("Peer").Key("Endpoint").String()
-				go func() {
-					host, _, e := net.SplitHostPort(endpoint)
-					if e != nil {
-						return
-					}
-					ips, e := net.LookupIP(host)
-					if e != nil || len(ips) == 0 {
-						return
-					}
-					code, e := countries.Find(ips[0].String())
-					if e != nil {
-						return
-					}
-					data, e := fs.ReadFile(t.assets, "flags/"+code+".png")
-					if e != nil {
-						return
-					}
-					glib.IdleAdd(func() {
-						if t.closed || generation != t.generation {
-							return
-						}
-						texture, e := gdk.NewTextureFromBytes(glibv2.NewBytesWithGo(data))
-						if e == nil {
-							flag.SetFromPaintable(texture)
-						}
-					})
-				}()
-			}
-		}
+		flag := gtk.NewImage()
+		flag.SetPixelSize(20)
+		flag.SetVAlign(gtk.AlignCenter)
+		flag.SetVisible(false)
+		t.flags[name] = flag
+		box.Append(flag)
 		label := gtk.NewLabel(name)
 		label.SetXAlign(0)
 		box.Append(label)
@@ -95,6 +66,11 @@ func (t *Tunnels) ScanTunnels() error {
 		t.list.SelectRow(t.list.RowAtIndex(0))
 	}
 	t.actions["export"].SetEnabled(len(t.icons) > 0)
+	enabled := Settings.CountryFlags
+	if t.preferences.Visible() {
+		enabled = t.switches["country_flags"].Active()
+	}
+	t.refreshCountryFlags(enabled)
 	t.UpdateRow(t.list.SelectedRow())
 	t.updateTray()
 	t.RefreshStatus()
@@ -160,14 +136,9 @@ func (t *Tunnels) applyStatus(ds []*wgtypes.Device, err error) {
 	}
 	t.devices = ds
 	t.statusAvailable = err == nil
+	activeNames := deviceNames(ds)
 	for name, icon := range t.icons {
-		icon.RemoveCSSClass("success")
-		icon.RemoveCSSClass("dim-label")
-		if t.statusAvailable && contains(deviceNames(ds), name) {
-			icon.AddCSSClass("success")
-		} else {
-			icon.AddCSSClass("dim-label")
-		}
+		icon.SetVisible(t.statusAvailable && contains(activeNames, name))
 	}
 	t.actions["toggle"].SetEnabled(t.list.SelectedRow() != nil && t.statusAvailable)
 	t.renderStatus()

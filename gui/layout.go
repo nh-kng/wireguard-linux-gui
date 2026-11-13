@@ -8,14 +8,15 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/core/glib"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	glibv2 "github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/rs/zerolog/log"
-	"wireguard-linux-gui/gui/countries"
 	"wireguard-linux-gui/internal/tray"
+	"wireguard-linux-gui/settings"
 )
 
 func (t *Tunnels) bindActions() {
@@ -28,10 +29,9 @@ func (t *Tunnels) bindActions() {
 		},
 		"toggle": func() { ShowError(t.ToggleTunnel(t.list.SelectedRow(), "")) },
 		"remove": t.removeSelected, "import": t.importTunnels, "export": t.exportTunnels,
-		"log": func() { t.logs.Present() }, "preferences": func() { t.fromSettings(); t.preferences.Present() },
-		"about": func() {
-			message(&t.window.Window, "WireGuard Linux GUI", "Version "+Version+"\nA native GTK4/Libadwaita client for WireGuard.\nMIT license; bindings use MPL-2.0.", nil)
-		},
+		"log": func() { t.logs.Present() }, "preferences": t.openPreferences,
+		"about":              t.openAbout,
+		"preferences-cancel": t.cancelPreferences, "preferences-save": t.commitPreferences,
 		"editor-cancel": t.cancelEditor, "editor-save": func() { ShowError(t.saveEditor()) },
 	}
 	for name, f := range functions {
@@ -54,6 +54,16 @@ func (t *Tunnels) bindActions() {
 		return false
 	})
 	t.editor.AddController(key)
+	prefKey := gtk.NewEventControllerKey()
+	prefKey.ConnectKeyPressed(func(value, code uint, state gdk.ModifierType) bool {
+		if value == gdk.KEY_Escape {
+			t.closePreferences()
+			return true
+		}
+		return false
+	})
+	t.preferences.AddController(prefKey)
+	t.actions["preferences-save"].SetEnabled(false)
 }
 func uniqueNetworks(networks []string) []string {
 	sort.Strings(networks)
@@ -65,46 +75,104 @@ func uniqueNetworks(networks []string) []string {
 	}
 	return result
 }
+func preferenceValues(s *settings.Settings) map[string]bool {
+	return map[string]bool{
+		"multiple_active_tunnels": s.MultipleTunnels,
+		"start_tray":              s.StartOnTray,
+		"check_updates":           s.CheckUpdates,
+		"remember_connected":      s.RememberConnectedServers,
+		"country_flags":           s.CountryFlags,
+		"polkit_policy":           s.Passwordless,
+	}
+}
 func (t *Tunnels) fromSettings() {
 	t.syncingSettings = true
 	defer func() { t.syncingSettings = false }()
-	for id, v := range map[string]bool{"multiple_active_tunnels": Settings.MultipleTunnels, "start_tray": Settings.StartOnTray, "check_updates": Settings.CheckUpdates, "country_flags": Settings.CountryFlags, "remember_connected": Settings.RememberConnectedServers, "polkit_policy": Settings.Passwordless} {
+	for id, v := range preferenceValues(Settings) {
 		t.switches[id].SetActive(v)
 	}
+}
+func (t *Tunnels) preferencesDirty() bool {
+	for id, v := range preferenceValues(Settings) {
+		if t.switches[id].Active() != v {
+			return true
+		}
+	}
+	return false
+}
+func (t *Tunnels) openPreferences() {
+	if !t.preferences.Visible() {
+		t.fromSettings()
+		t.actions["preferences-save"].SetEnabled(false)
+	}
+	t.preferences.Present()
+}
+func (t *Tunnels) cancelPreferences() {
+	t.fromSettings()
+	t.preferences.SetVisible(false)
+	t.actions["preferences-save"].SetEnabled(false)
+	t.refreshCountryFlags(Settings.CountryFlags)
+}
+func (t *Tunnels) commitPreferences() {
+	if err := t.saveSettings(); err != nil {
+		message(&t.preferences.Window, "Could not save preferences", err.Error(), nil)
+		return
+	}
+	t.actions["preferences-save"].SetEnabled(false)
+	t.preferences.SetVisible(false)
+	t.refreshCountryFlags(Settings.CountryFlags)
+}
+func (t *Tunnels) closePreferences() {
+	if !t.preferencesDirty() {
+		t.cancelPreferences()
+		return
+	}
+	if t.preferencesPrompt != nil {
+		t.preferencesPrompt.Present()
+		return
+	}
+	d := adw.NewMessageDialog(&t.preferences.Window, "Save changes?", "Your preferences have unsaved changes.")
+	t.preferencesPrompt = d
+	d.AddResponse("cancel", "Keep Editing")
+	d.AddResponse("discard", "Discard")
+	d.AddResponse("save", "Save")
+	d.SetCloseResponse("cancel")
+	d.SetDefaultResponse("save")
+	d.SetResponseAppearance("discard", adw.ResponseDestructive)
+	d.SetResponseAppearance("save", adw.ResponseSuggested)
+	d.ConnectResponse(func(response string) {
+		t.preferencesPrompt = nil
+		d.Destroy()
+		switch response {
+		case "discard":
+			t.cancelPreferences()
+		case "save":
+			t.commitPreferences()
+		}
+	})
+	d.Present()
 }
 func (t *Tunnels) saveSettings() error {
 	previous := *Settings
 	Settings.MultipleTunnels = t.switches["multiple_active_tunnels"].Active()
 	Settings.StartOnTray = t.switches["start_tray"].Active()
 	Settings.CheckUpdates = t.switches["check_updates"].Active()
-	Settings.CountryFlags = t.switches["country_flags"].Active()
 	Settings.RememberConnectedServers = t.switches["remember_connected"].Active()
+	Settings.CountryFlags = t.switches["country_flags"].Active()
 	Settings.Passwordless = t.switches["polkit_policy"].Active()
 	policyChanged := previous.Passwordless != Settings.Passwordless
 	if policyChanged {
 		if err := t.SetPasswordless(); err != nil {
 			*Settings = previous
-			t.fromSettings()
 			return err
 		}
 	}
 	if err := Settings.Save(); err != nil {
 		*Settings = previous
-		t.fromSettings()
 		if policyChanged {
 			err = errors.Join(err, t.SetPasswordless())
 		}
 		return err
-	}
-	if !previous.CountryFlags && Settings.CountryFlags {
-		go func() {
-			if err := countries.OpenDatabase(); err != nil {
-				ShowError(err)
-			}
-		}()
-	}
-	if previous.CountryFlags != Settings.CountryFlags {
-		return t.ScanTunnels()
 	}
 	return nil
 }

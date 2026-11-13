@@ -12,6 +12,7 @@ builds:
     flags: [-trimpath]
     ldflags:
       - -s -w
+      - -X wireguard-linux-gui/gui.BuildDate={{ .Date }}
 
 archives:
   - formats: [tar.gz]

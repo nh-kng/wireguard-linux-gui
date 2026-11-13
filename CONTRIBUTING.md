@@ -42,12 +42,15 @@ in the privileged process. Builds use CGO and require Go 1.24 or newer.
 Run from the repository root:
 
 ```sh
-go build -o wireguard-linux-gui .
+go build -ldflags "-X wireguard-linux-gui/gui.BuildDate=$(date -u +%Y-%m-%d)" -o wireguard-linux-gui .
 sudo ./wireguard-linux-gui
 ```
 
 The GTK4 Builder XML and icons are embedded by `go build`; no generation step
 is needed. Edit `gui/window.ui` for layout changes.
+
+The linker flag stamps the UTC build date shown below the About dialog's version.
+Without this flag, the date is shown as `unknown`. Release packages stamp it automatically.
 
 Root access is needed to read and manage tunnel configurations. Installed desktop
 launchers use `pkexec`.
@@ -87,7 +90,7 @@ Choose **Quit** from the running app's tray menu, then run from the repository
 root:
 
 ```sh
-go build -o wireguard-linux-gui . &&
+go build -ldflags "-X wireguard-linux-gui/gui.BuildDate=$(date -u +%Y-%m-%d)" -o wireguard-linux-gui . &&
 sudo install -Dm755 ./wireguard-linux-gui /usr/bin/wireguard-linux-gui &&
 sudo install -Dm644 deb/usr/share/applications/wireguard-linux-gui.desktop /usr/share/applications/wireguard-linux-gui.desktop
 ```

@@ -57,6 +57,8 @@ func (s *Settings) Save() error {
 
 func (s *Settings) Load() error {
 	log.Debug().Msg("loading settings")
+	s.MultipleTunnels = true
+	s.RememberConnectedServers = true
 	path := FilePath
 	if !dry.FileExists(path) {
 		path = legacyFilePath
@@ -71,7 +73,7 @@ func (s *Settings) Load() error {
 		return err
 	}
 
-	settings := &Settings{}
+	settings := &Settings{MultipleTunnels: true, RememberConnectedServers: true}
 	if err := json.Unmarshal(data, &settings); err != nil {
 		return err
 	}

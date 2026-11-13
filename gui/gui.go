@@ -17,7 +17,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
-	"wireguard-linux-gui/gui/countries"
 	"wireguard-linux-gui/internal/statuspoll"
 	"wireguard-linux-gui/internal/tray"
 	"wireguard-linux-gui/settings"
@@ -46,15 +45,18 @@ type Tunnels struct {
 	app                                   *adw.Application
 	builder                               *gtk.Builder
 	window                                *adw.ApplicationWindow
-	preferences                           *adw.PreferencesWindow
+	preferences                           *adw.Window
 	editor, logs                          *adw.Window
 	list                                  *gtk.ListBox
 	actions                               map[string]*gio.SimpleAction
 	switches                              map[string]*adw.SwitchRow
 	fields                                map[string]*gtk.Label
 	icons                                 map[string]*gtk.Image
-	assets                                fs.FS
 	tray                                  *tray.Tray
+	assets                                fs.FS
+	flags                                 map[string]*gtk.Image
+	flagGeneration                        uint64
+	preferencesPrompt                     *adw.MessageDialog
 	iconDir                               string
 	statusPoller                          *statuspoll.Poller[[]*wgtypes.Device]
 	statusTimer                           glib.SourceHandle
@@ -66,7 +68,6 @@ type Tunnels struct {
 	syncingSettings                       bool
 	modified                              bool
 	closed                                bool
-	generation                            uint64
 }
 
 func object[T any](b *gtk.Builder, id string) T {
@@ -81,10 +82,10 @@ func object[T any](b *gtk.Builder, id string) T {
 	return v
 }
 func Create(app *adw.Application, b *gtk.Builder, assets fs.FS, sessionAddress string) (*Tunnels, error) {
-	t := &Tunnels{sessionAddress: sessionAddress, app: app, builder: b, assets: assets, actions: map[string]*gio.SimpleAction{}, switches: map[string]*adw.SwitchRow{}, fields: map[string]*gtk.Label{}, icons: map[string]*gtk.Image{}}
+	t := &Tunnels{assets: assets, sessionAddress: sessionAddress, app: app, builder: b, actions: map[string]*gio.SimpleAction{}, switches: map[string]*adw.SwitchRow{}, fields: map[string]*gtk.Label{}, icons: map[string]*gtk.Image{}}
 	t.window = object[*adw.ApplicationWindow](b, "main_window")
 	t.window.SetApplication(&app.Application)
-	t.preferences = object[*adw.PreferencesWindow](b, "settings_window")
+	t.preferences = object[*adw.Window](b, "settings_window")
 	t.editor = object[*adw.Window](b, "editor_window")
 	t.logs = object[*adw.Window](b, "log_window")
 	t.preferences.SetTransientFor(&t.window.Window)
@@ -97,7 +98,7 @@ func Create(app *adw.Application, b *gtk.Builder, assets fs.FS, sessionAddress s
 	for _, id := range []string{"interface_status", "interface_public_key", "interface_listen_port", "interface_addresses", "interface_dns_servers", "peer_public_key", "peer_allowed_ips", "peer_endpoint", "peer_keepalive", "peer_latest_handshake", "peer_transfer"} {
 		t.fields[id] = object[*gtk.Label](b, "label_"+id)
 	}
-	for _, id := range []string{"multiple_active_tunnels", "start_tray", "check_updates", "country_flags", "remember_connected", "polkit_policy"} {
+	for _, id := range []string{"multiple_active_tunnels", "start_tray", "check_updates", "remember_connected", "country_flags", "polkit_policy"} {
 		t.switches[id] = object[*adw.SwitchRow](b, "settings_"+id)
 	}
 	t.fromSettings()
@@ -113,16 +114,20 @@ func Create(app *adw.Application, b *gtk.Builder, assets fs.FS, sessionAddress s
 	}
 	stopAppearance := t.followAppearance()
 	t.bindActions()
-	for _, row := range t.switches {
+	for id, row := range t.switches {
 		row.NotifyProperty("active", func() {
 			if !t.syncingSettings {
-				ShowError(t.saveSettings())
+				t.actions["preferences-save"].SetEnabled(t.preferencesDirty())
+				if id == "country_flags" {
+					t.refreshCountryFlags(row.Active())
+				}
 			}
 		})
 	}
 	t.list.ConnectRowSelected(func(row *gtk.ListBoxRow) { t.UpdateRow(row) })
 	object[*gtk.Entry](b, "editor_name").ConnectChanged(func() { t.modified = true })
 	object[*gtk.TextView](b, "editor_text").Buffer().ConnectChanged(func() { t.modified = true })
+	t.preferences.ConnectCloseRequest(func() bool { t.closePreferences(); return true })
 	t.editor.ConnectCloseRequest(func() bool { t.cancelEditor(); return true })
 	t.window.ConnectCloseRequest(func() bool {
 		if t.tray.Available() {
@@ -183,13 +188,6 @@ func Create(app *adw.Application, b *gtk.Builder, assets fs.FS, sessionAddress s
 		return client.Devices()
 	}, func(f func()) { glib.IdleAdd(f) }, func(ds []*wgtypes.Device, e error) { t.devices = ds; t.applyStatus(ds, e); t.scheduleStatusRefresh() })
 	t.restoreConnections()
-	if Settings.CountryFlags {
-		go func() {
-			if e := countries.OpenDatabase(); e != nil {
-				log.Error().Err(e).Msg("country database")
-			}
-		}()
-	}
 	if Settings.CheckUpdates {
 		glib.TimeoutAdd(60000, func() bool { go updateCheck(); return false })
 	}
