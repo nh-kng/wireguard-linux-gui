@@ -3,8 +3,6 @@ package gui
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -14,7 +12,6 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	glibv2 "github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/rs/zerolog/log"
 	"wireguard-linux-gui/internal/autostart"
 	"wireguard-linux-gui/internal/tray"
 	"wireguard-linux-gui/settings"
@@ -28,7 +25,11 @@ func (t *Tunnels) bindActions() {
 				ShowError(t.openEditor(row.Name()))
 			}
 		},
-		"toggle": func() { ShowError(t.ToggleTunnel(t.list.SelectedRow(), "")) },
+		"toggle": func() {
+			if row := t.list.SelectedRow(); row != nil {
+				t.startTunnelOperation("toggle", row.Name())
+			}
+		},
 		"remove": t.removeSelected, "import": t.importTunnels, "export": t.exportTunnels,
 		"log": func() { t.logs.Present() }, "preferences": t.openPreferences,
 		"about":              t.openAbout,
@@ -187,6 +188,9 @@ func (t *Tunnels) closePreferences() {
 	d.Present()
 }
 func (t *Tunnels) saveSettings() error {
+	if t.operationBusy {
+		return errors.New("wait for the tunnel operation to finish")
+	}
 	enabled := t.switches["start_login"].Active()
 	if !t.loginStartupAvailable || enabled == t.loginStartupEnabled {
 		return t.saveGeneralSettings()
@@ -223,42 +227,11 @@ func (t *Tunnels) saveGeneralSettings() error {
 	return nil
 }
 func (t *Tunnels) restoreConnections() {
-	defer func() { t.reconnectedRememberedServers = true }()
-	if !Settings.RememberConnectedServers {
+	if !Settings.RememberConnectedServers || len(Settings.ConnectedServers) == 0 {
+		t.reconnectedRememberedServers = true
 		return
 	}
-	ds, err := wgc.Devices()
-	if err != nil {
-		log.Error().Err(err).Msg("skip remembered tunnels")
-		return
-	}
-	active := deviceNames(ds)
-	if !Settings.MultipleTunnels && len(active) > 0 {
-		return
-	}
-	names := []string{}
-	for name := range Settings.ConnectedServers {
-		names = append(names, name)
-	}
-	sort.Slice(names, func(i, j int) bool {
-		a, b := names[i], names[j]
-		if Settings.ConnectedServers[a] == Settings.ConnectedServers[b] {
-			return a < b
-		}
-		return Settings.ConnectedServers[a] > Settings.ConnectedServers[b]
-	})
-	for _, name := range names {
-		if contains(active, name) {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(TunnelsPath, name+".conf")); err != nil {
-			continue
-		}
-		ShowError(t.ToggleTunnel(nil, name))
-		if !Settings.MultipleTunnels {
-			break
-		}
-	}
+	t.startTunnelOperation("restore", "")
 }
 func contains(values []string, value string) bool {
 	for _, v := range values {
@@ -298,8 +271,8 @@ func (t *Tunnels) updateTray() {
 		if len(names) > 1 {
 			label = "Deactivate All"
 		}
-		items = append(items, tray.Item{Key: "deactivate", Label: label, Visible: true, Enabled: true, Activate: func() {
-			ShowError(t.deactivateAll())
+		items = append(items, tray.Item{Key: "deactivate", Label: label, Visible: true, Enabled: !t.operationBusy, Activate: func() {
+			t.startTunnelOperation("deactivate", "")
 		}})
 	}
 	items = append(items, tray.Item{Separator: true, Visible: true})
@@ -313,7 +286,7 @@ func (t *Tunnels) updateTray() {
 		if networks, ok := networksByTunnel[name]; ok {
 			label += " — " + networks
 		}
-		items = append(items, tray.Item{Key: "tunnel:" + name, Label: label, Enabled: t.statusAvailable, Visible: true, Checkable: true, Checked: contains(names, name), Activate: func() { ShowError(t.ToggleTunnel(nil, name)) }})
+		items = append(items, tray.Item{Key: "tunnel:" + name, Label: label, Enabled: t.statusAvailable && !t.operationBusy, Visible: true, Checkable: true, Checked: contains(names, name), Activate: func() { t.startTunnelOperation("toggle", name) }})
 	}
 	if t.list.RowAtIndex(0) != nil {
 		items = append(items, tray.Item{Separator: true, Visible: true})

@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -44,6 +45,10 @@ type wireguardClient interface {
 }
 
 type Tunnels struct {
+	importBusy                            bool
+	operationDone                         chan struct{}
+	operationBusy                         bool
+	operationCancel                       context.CancelFunc
 	sessionAddress                        string
 	app                                   *adw.Application
 	builder                               *gtk.Builder
@@ -123,7 +128,7 @@ func Create(app *adw.Application, b *gtk.Builder, assets fs.FS, sessionAddress s
 	for id, row := range t.switches {
 		row.NotifyProperty("active", func() {
 			if !t.syncingSettings {
-				t.actions["preferences-save"].SetEnabled(t.preferencesDirty())
+				t.actions["preferences-save"].SetEnabled(!t.operationBusy && t.preferencesDirty())
 				if id == "country_flags" {
 					t.refreshCountryFlags(row.Active())
 				}
@@ -147,6 +152,13 @@ func Create(app *adw.Application, b *gtk.Builder, assets fs.FS, sessionAddress s
 	t.window.ConnectHide(func() { t.scheduleStatusRefresh() })
 	app.ConnectShutdown(func() {
 		t.closed = true
+		if t.operationCancel != nil {
+			t.operationCancel()
+			select {
+			case <-t.operationDone:
+			case <-time.After(2 * time.Second):
+			}
+		}
 		stopAppearance()
 		t.cancelStatusTimer()
 		if t.statusPoller != nil {

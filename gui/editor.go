@@ -60,6 +60,9 @@ func (t *Tunnels) cancelEditor() {
 	}
 }
 func (t *Tunnels) saveEditor() error {
+	if t.operationBusy {
+		return errors.New("wait for the tunnel operation to finish")
+	}
 	name := strings.TrimSpace(object[*gtk.Entry](t.builder, "editor_name").Text())
 	if !validTunnelName(name) {
 		return errors.New("use a tunnel name of 1–15 letters, numbers, or _ = + . - characters")
@@ -97,6 +100,10 @@ func (t *Tunnels) removeSelected() {
 	}
 	name := row.Name()
 	message(&t.window.Window, "Remove tunnel?", "Remove "+name+"? Active interfaces continue running.", func() {
+		if t.operationBusy {
+			ShowError(errors.New("wait for the tunnel operation to finish"))
+			return
+		}
 		if err := os.Remove(filepath.Join(TunnelsPath, name+".conf")); err != nil {
 			ShowError(err)
 			return

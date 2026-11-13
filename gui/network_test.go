@@ -1,8 +1,8 @@
 package gui
 
 import (
+	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -40,8 +40,8 @@ func TestWireGuardNamespace(t *testing.T) {
 	wgc = client
 	TunnelsPath = t.TempDir() + "/"
 	Settings = &settings.Settings{MultipleTunnels: true}
-	runWGQuick = func(action, name string) ([]byte, error) {
-		return exec.Command("wg-quick", action, filepath.Join(TunnelsPath, name+".conf")).CombinedOutput()
+	runWGQuick = func(ctx context.Context, action, name string) ([]byte, error) {
+		return runTunnelCommand(ctx, "wg-quick", action, filepath.Join(TunnelsPath, name+".conf"))
 	}
 	for _, name := range []string{"wg-ui-one", "wg-ui-two"} {
 		key, e := wgtypes.GeneratePrivateKey()
@@ -67,7 +67,7 @@ func TestWireGuardNamespace(t *testing.T) {
 		t.Fatal("deactivation left interface active")
 	}
 	// An interface activated externally must be seen by the same live status query.
-	if out, e := runWGQuick("up", "wg-ui-one"); e != nil {
+	if out, e := runWGQuick(context.Background(), "up", "wg-ui-one"); e != nil {
 		t.Fatalf("external activation: %v %s", e, out)
 	}
 	ds, err := client.Devices()

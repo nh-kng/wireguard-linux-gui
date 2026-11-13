@@ -80,9 +80,9 @@ func (t *Tunnels) ScanTunnels() error {
 func (t *Tunnels) UpdateRow(row *gtk.ListBoxRow) {
 	selected := row != nil
 	for _, id := range []string{"edit", "remove"} {
-		t.actions[id].SetEnabled(selected)
+		t.actions[id].SetEnabled(selected && !t.operationBusy)
 	}
-	t.actions["toggle"].SetEnabled(selected && t.statusAvailable)
+	t.actions["toggle"].SetEnabled(selected && t.statusAvailable && !t.operationBusy)
 	for _, label := range t.fields {
 		label.SetText("—")
 	}
@@ -141,7 +141,7 @@ func (t *Tunnels) applyStatus(ds []*wgtypes.Device, err error) {
 	for name, icon := range t.icons {
 		icon.SetVisible(t.statusAvailable && contains(activeNames, name))
 	}
-	t.actions["toggle"].SetEnabled(t.list.SelectedRow() != nil && t.statusAvailable)
+	t.actions["toggle"].SetEnabled(t.list.SelectedRow() != nil && t.statusAvailable && !t.operationBusy)
 	t.renderStatus()
 	t.updateTray()
 }
@@ -151,6 +151,9 @@ func (t *Tunnels) renderStatus() {
 	}
 	button := object[*gtk.Button](t.builder, "button_change_state")
 	button.SetLabel("Activate")
+	if t.operationBusy {
+		button.SetLabel("Working…")
+	}
 	t.label("interface_public_key", t.selectedPublicKey)
 	t.label("interface_listen_port", t.selectedListenPort)
 	t.label("peer_latest_handshake", "—")
@@ -165,7 +168,9 @@ func (t *Tunnels) renderStatus() {
 			continue
 		}
 		t.label("interface_status", "Active")
-		button.SetLabel("Deactivate")
+		if !t.operationBusy {
+			button.SetLabel("Deactivate")
+		}
 		t.label("interface_public_key", d.PublicKey.String())
 		t.label("interface_listen_port", strconv.Itoa(d.ListenPort))
 		for _, p := range d.Peers {

@@ -1,10 +1,13 @@
 package gui
 
 import (
+	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"wireguard-linux-gui/settings"
@@ -59,7 +62,7 @@ func TestTunnelActions(t *testing.T) {
 			wgc = f
 			Settings = &settings.Settings{MultipleTunnels: test.multiple}
 			var calls []string
-			runWGQuick = func(action, name string) ([]byte, error) {
+			runWGQuick = func(ctx context.Context, action, name string) ([]byte, error) {
 				calls = append(calls, action+" "+name)
 				f.active[name] = action == "up"
 				return nil, nil
@@ -84,8 +87,79 @@ func TestUnavailableStatusCannotActivate(t *testing.T) {
 	oldClient, oldQuick := wgc, runWGQuick
 	defer func() { wgc, runWGQuick = oldClient, oldQuick }()
 	wgc = &fakeWireGuard{err: errors.New("status unavailable")}
-	runWGQuick = func(action, name string) ([]byte, error) { t.Fatal("ran command without status"); return nil, nil }
+	runWGQuick = func(ctx context.Context, action, name string) ([]byte, error) {
+		t.Fatal("ran command without status")
+		return nil, nil
+	}
 	if (&Tunnels{}).ToggleTunnel(nil, "one") == nil {
 		t.Fatal("missing error")
+	}
+}
+
+func TestTunnelCommandCancellation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := runTunnelCommand(ctx, "/bin/sh", "-c", "sleep 30 & wait")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline, got %v", err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("descendants held command open after cancellation")
+	}
+}
+
+func TestTunnelCommandOutputLimit(t *testing.T) {
+	data, err := runTunnelCommand(context.Background(), "/bin/sh", "-c", "printf '%070000d' 0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) != 64<<10 {
+		t.Fatalf("unbounded output: %d", len(data))
+	}
+}
+
+func TestRestoreRejectsInvalidNamesAndPreservesActiveTunnels(t *testing.T) {
+	oldQuick := runWGQuick
+	defer func() { runWGQuick = oldQuick }()
+	dir := t.TempDir()
+	for _, name := range []string{"one", "two"} {
+		if err := os.WriteFile(filepath.Join(dir, name+".conf"), []byte("test"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	client := &fakeWireGuard{active: map[string]bool{"one": true}}
+	snapshot := &settings.Settings{MultipleTunnels: true, RememberConnectedServers: true, ConnectedServers: map[string]int64{"../bad": 3, "one": 2, "two": 1}}
+	var calls []string
+	runWGQuick = func(ctx context.Context, action, name string) ([]byte, error) {
+		calls = append(calls, action+" "+name)
+		client.active[name] = action == "up"
+		return nil, nil
+	}
+	backend := tunnelBackend{client: client, settings: snapshot, ctx: context.Background()}
+	if err := backend.restore(dir); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(calls, []string{"up two"}) {
+		t.Fatalf("restore commands: %v", calls)
+	}
+	if !client.active["one"] || !client.active["two"] {
+		t.Fatalf("wrong final state: %v", client.active)
+	}
+}
+
+func TestCancelledOrInvalidToggleRunsNoCommands(t *testing.T) {
+	oldQuick := runWGQuick
+	defer func() { runWGQuick = oldQuick }()
+	runWGQuick = func(context.Context, string, string) ([]byte, error) { t.Fatal("unexpected command"); return nil, nil }
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	backend := tunnelBackend{client: &fakeWireGuard{}, settings: &settings.Settings{}, ctx: ctx}
+	if err := backend.toggle("one"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation lost: %v", err)
+	}
+	backend.ctx = context.Background()
+	if err := backend.toggle("../bad.conf"); err == nil {
+		t.Fatal("invalid tunnel name accepted")
 	}
 }

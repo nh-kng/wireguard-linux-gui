@@ -124,6 +124,24 @@ Imports preserve existing profiles: a duplicate filename is rejected. Tunnel
 names must contain 1–15 letters, numbers, or `_ = + . -` characters, without the
 `.conf` extension; `.` and `..` are not valid names.
 
+Imports accept regular files, with limits of 4 MiB per configuration, 128
+configurations and 32 MiB of expanded data per selection. ZIP files are limited
+to 64 MiB and 256 entries. Invalid or over-limit selections are rejected before
+writing profiles. If a destination already exists, files created by that import
+are removed and existing profiles are preserved.
+
+Configurations containing `PreUp`, `PostUp`, `PreDown`, or `PostDown` commands
+require **Trust and Import** confirmation. These commands run as root when the
+tunnel is activated or deactivated; review them and trust the source before
+confirming. Canceling imports none of the selected profiles.
+
+Tunnel changes run in the background, one at a time. Each `wg-quick` command has
+a two-minute timeout, and quitting cancels an in-progress command. An interrupted
+command can leave partial network changes; inspect the refreshed status before
+retrying. Export writes a private temporary archive and atomically replaces the
+chosen destination, preserving existing backups if archive creation fails.
+
+
 **Active** means the local WireGuard interface is up. A recent handshake and
 changing transfer counters help confirm that the peer is responding. Status
 refreshes about every second while the window is open and every five seconds

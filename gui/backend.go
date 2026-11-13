@@ -2,71 +2,110 @@ package gui
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
-	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
-	"github.com/rs/zerolog/log"
 	"github.com/ungerik/go-dry"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
+	"wireguard-linux-gui/settings"
 )
 
-var runWGQuick = func(action, name string) ([]byte, error) {
-	return exec.Command("wg-quick", action, name).CombinedOutput()
+const tunnelCommandTimeout = 2 * time.Minute
+
+// Bound diagnostic output even for verbose hooks. Kill the entire process group
+// on timeout/cancellation so descendants cannot hold the output pipes open.
+type commandOutput struct{ buffer bytes.Buffer }
+
+func (b *commandOutput) Write(p []byte) (int, error) {
+	n := len(p)
+	if remaining := (64 << 10) - b.buffer.Len(); remaining > 0 {
+		if len(p) > remaining {
+			p = p[:remaining]
+		}
+		b.buffer.Write(p)
+	}
+	return n, nil
+}
+func runTunnelCommand(ctx context.Context, command string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, tunnelCommandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, command, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = time.Second
+	var output commandOutput
+	cmd.Stdout, cmd.Stderr = &output, &output
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	return output.buffer.Bytes(), err
+}
+
+var runWGQuick = func(ctx context.Context, action, name string) ([]byte, error) {
+	return runTunnelCommand(ctx, "wg-quick", action, name)
+}
+
+type tunnelBackend struct {
+	client      wireguardClient
+	settings    *settings.Settings
+	reconnected bool
+	changed     bool
+	ctx         context.Context
+}
+
+// Synchronous entry points are used by unit and explicitly invoked namespace
+// tests. Production UI actions use startTunnelOperation below.
+func (t *Tunnels) ToggleTunnel(row *gtk.ListBoxRow, name string) error {
+	if row != nil && name == "" {
+		name = row.Name()
+	}
+	defer t.RefreshStatus()
+	backend := tunnelBackend{client: wgc, settings: Settings, reconnected: t.reconnectedRememberedServers, ctx: context.Background()}
+	err := backend.toggle(name)
+	return errors.Join(err, backend.save())
+}
+func (t *Tunnels) deactivateAll() error {
+	defer t.RefreshStatus()
+	backend := tunnelBackend{client: wgc, settings: Settings, reconnected: t.reconnectedRememberedServers, ctx: context.Background()}
+	err := backend.deactivateAll()
+	return errors.Join(err, backend.save())
+}
+func (b *tunnelBackend) save() error {
+	if b.changed {
+		return b.settings.Save()
+	}
+	return nil
 }
 
 var policyPath = "/usr/share/polkit-1/actions/wireguard-linux-gui.policy"
 
-func (t *Tunnels) ToggleTunnel(row *gtk.ListBoxRow, name string) error {
-	defer t.RefreshStatus()
-	list, err := wgc.Devices()
+func (b *tunnelBackend) toggle(name string) error {
+	if !validTunnelName(name) {
+		return errors.New("invalid tunnel name")
+	}
+	if err := b.ctx.Err(); err != nil {
+		return err
+	}
+	list, err := b.client.Devices()
 	if err != nil {
 		return err
 	}
-
-	if row == nil && name != "" {
-		if tl := t.list; tl != nil {
-			for i := uint(0); ; i++ {
-				r := tl.RowAtIndex(int(i))
-				if r == nil {
-					break
-				}
-				if rname := r.Name(); rname == name {
-					row = r
-					break
-				}
-			}
-		}
-	}
-
 	activeNames := deviceNames(list)
-	if row != nil && name == "" {
-		// conf name
-		name = row.Name()
-	}
-
-	// https://github.com/UnnoTed/wireguird/issues/11#issuecomment-1332047191
-	if len(name) >= 16 {
-		return errors.New("Tunnel's file name is too long (" + strconv.Itoa(len(name)) + "), max length: 15")
-	}
-
-	if name == "" {
-		return errors.New("No tunnel selected")
-	}
-
 	// Disconnect from the given tunnel, then query the resulting actual state.
-	dc := t.disconnectTunnel
+	dc := b.disconnectTunnel
 
 	// disconnects from all tunnels before connecting to a new one
 	// when the multipleTunnels option is disabled
-	if Settings.MultipleTunnels {
-		log.Info().Str("name", name).Msg("NAME")
-		d, err := wgc.Device(name)
+	if b.settings.MultipleTunnels {
+		d, err := b.client.Device(name)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -91,23 +130,19 @@ func (t *Tunnels) ToggleTunnel(row *gtk.ListBoxRow, name string) error {
 	}
 
 	// connect to a tunnel
-	output, err := runWGQuick("up", name)
+	output, err := runWGQuick(b.ctx, "up", name)
 	if err != nil {
 		err = fmt.Errorf("wg-quick up %s: %w\n%s", name, err, output)
 		wlog("ERROR", err.Error())
 		return err
 	}
 
-	if Settings.RememberConnectedServers {
-		// using time because order may be important
-		if Settings.ConnectedServers == nil {
-			Settings.ConnectedServers = map[string]int64{}
+	if b.settings.RememberConnectedServers {
+		if b.settings.ConnectedServers == nil {
+			b.settings.ConnectedServers = map[string]int64{}
 		}
-
-		Settings.ConnectedServers[name] = time.Now().Unix()
-		if err := Settings.Save(); err != nil {
-			log.Error().Err(err).Msg("Error saving settings on connect")
-		}
+		b.settings.ConnectedServers[name] = time.Now().Unix()
+		b.changed = true
 	}
 
 	if err := wlog("INFO", "Connected to "+name); err != nil {
@@ -150,33 +185,31 @@ func (t *Tunnels) SetPasswordless() error {
 	return nil
 }
 
-func (t *Tunnels) disconnectTunnel(d *wgtypes.Device) error {
-	output, err := runWGQuick("down", d.Name)
+func (b *tunnelBackend) disconnectTunnel(d *wgtypes.Device) error {
+	output, err := runWGQuick(b.ctx, "down", d.Name)
 	if err != nil {
 		err = fmt.Errorf("wg-quick down %s: %w\n%s", d.Name, err, output)
 		wlog("ERROR", err.Error())
 		return err
 	}
 
-	if Settings.RememberConnectedServers && Settings.ConnectedServers != nil && len(Settings.ConnectedServers) > 0 && t.reconnectedRememberedServers {
-		delete(Settings.ConnectedServers, d.Name)
-		if err := Settings.Save(); err != nil {
-			log.Error().Err(err).Msg("Error saving settings on disconnect")
-			wlog("INFO", "Error saving settings on disconnect: "+err.Error())
+	if b.settings.RememberConnectedServers && b.reconnected {
+		if _, remembered := b.settings.ConnectedServers[d.Name]; remembered {
+			delete(b.settings.ConnectedServers, d.Name)
+			b.changed = true
 		}
 	}
 
 	return wlog("INFO", "Disconnected from "+d.Name)
 }
 
-func (t *Tunnels) deactivateAll() error {
-	defer t.RefreshStatus()
-	ds, err := wgc.Devices()
+func (b *tunnelBackend) deactivateAll() error {
+	ds, err := b.client.Devices()
 	if err != nil {
 		return err
 	}
 	for _, d := range ds {
-		if err = t.disconnectTunnel(d); err != nil {
+		if err = b.disconnectTunnel(d); err != nil {
 			return err
 		}
 	}
