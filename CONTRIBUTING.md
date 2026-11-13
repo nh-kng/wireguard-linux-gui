@@ -84,6 +84,34 @@ Launch **WireGuard** from Applications, then check:
 - Reopening the window requests fresh status immediately.
 - Closing the window or choosing **Quit** leaves active tunnels running.
 
+### Verify login startup manually
+
+These checks require an explicitly requested GUI test and an installed copy with
+the updated desktop launcher; unit tests do not launch a desktop session.
+
+- With no existing login entry, launch the app and confirm **Preferences →
+  General → Start at login** is enabled and the user entry exists. Disable it and
+  save, then restart the app; it must stay disabled. Existing system entries,
+  including disabled ones, must be preserved.
+- Open Preferences, toggle **Start at login**, then Cancel or Discard. Confirm
+  the login entry is unchanged. Save the toggle and reopen Preferences to confirm
+  it reflects the entry on disk, including edits made outside the app.
+- Sign out and back in with startup enabled. Accept administrator authentication
+  and confirm one app instance appears. Repeat while canceling authentication;
+  the app should not start or retry, and the preference should stay enabled.
+- Check both settings of **Start in the system tray**. Without a tray host, the
+  window must remain accessible. Reopening from Applications should reuse the
+  existing instance. Remembered tunnels should follow their existing preference.
+- Disable login startup and save, then sign out and back in; the app should stay
+  closed. Confirm the entry contains `Hidden=true`.
+- Launch from a desktop session with an absolute custom `XDG_CONFIG_HOME` and
+  confirm the entry appears there, owned by the desktop user. A direct `sudo`
+  launch should use the invoking user's default config directory. A root-only
+  launch should show the login preference disabled with an explanation.
+- Simulate an unwritable configuration directory or settings destination in an
+  isolated test setup. Saving should show an error and leave Preferences open;
+  a later settings-save failure must restore the previous login entry.
+
 ### Rebuild and reinstall after changes
 
 Choose **Quit** from the running app's tray menu, then run from the repository
@@ -105,6 +133,32 @@ that are already installed or rebuild a `.deb` package for this local workflow.
 
 For package testing, build the packages below and install the chosen `.deb` with
 `sudo apt install /absolute/path/to/package.deb` instead of copying files manually.
+
+### Remove a local development installation
+
+Choose **Quit** from the app's tray menu first; closing the window only hides it.
+If you installed using the manual commands above, remove the installed files:
+
+```sh
+sudo rm -f /usr/bin/wireguard-linux-gui
+sudo rm -f /usr/share/applications/wireguard-linux-gui.desktop
+sudo rm -f /usr/share/polkit-1/actions/wireguard-linux-gui.policy
+sudo rm -rf /usr/share/wireguard-linux-gui
+```
+
+If you installed a `.deb` package instead, use `sudo apt remove wireguard-linux-gui`
+in place of those commands.
+
+For either installation method, remove the login startup entry as your regular
+desktop user, without `sudo`:
+
+```sh
+rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/wireguard-linux-gui.desktop"
+```
+
+This removes only the GUI app and its desktop integration. WireGuard tools,
+tunnel configurations, and active VPN connections remain intact. The repository
+and its locally built binary also remain.
 
 ## Check your changes
 

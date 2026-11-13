@@ -15,6 +15,7 @@ import (
 	glibv2 "github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/rs/zerolog/log"
+	"wireguard-linux-gui/internal/autostart"
 	"wireguard-linux-gui/internal/tray"
 	"wireguard-linux-gui/settings"
 )
@@ -85,14 +86,46 @@ func preferenceValues(s *settings.Settings) map[string]bool {
 		"polkit_policy":           s.Passwordless,
 	}
 }
+
+const loginStartupSubtitle = "Open WireGuard when you sign in. Administrator authentication may be required."
+
+func (t *Tunnels) reloadLoginStartup() {
+	t.loginStartupAvailable = false
+	t.loginStartupEnabled = false
+	reason := LoginStartupError
+	if LoginStartup != nil {
+		snapshot, err := LoginStartup.Read()
+		if err != nil {
+			reason = err.Error()
+		} else {
+			t.loginStartupAvailable = true
+			t.loginStartupEnabled = snapshot.Enabled
+		}
+	}
+	row := t.switches["start_login"]
+	row.SetSensitive(t.loginStartupAvailable)
+	if t.loginStartupAvailable {
+		row.SetSubtitle(loginStartupSubtitle)
+	} else {
+		if reason == "" {
+			reason = "No non-root desktop user is available."
+		}
+		row.SetSubtitle("Start at login is unavailable: " + reason)
+	}
+}
+
 func (t *Tunnels) fromSettings() {
 	t.syncingSettings = true
 	defer func() { t.syncingSettings = false }()
 	for id, v := range preferenceValues(Settings) {
 		t.switches[id].SetActive(v)
 	}
+	t.switches["start_login"].SetActive(t.loginStartupEnabled)
 }
 func (t *Tunnels) preferencesDirty() bool {
+	if t.loginStartupAvailable && t.switches["start_login"].Active() != t.loginStartupEnabled {
+		return true
+	}
 	for id, v := range preferenceValues(Settings) {
 		if t.switches[id].Active() != v {
 			return true
@@ -102,6 +135,7 @@ func (t *Tunnels) preferencesDirty() bool {
 }
 func (t *Tunnels) openPreferences() {
 	if !t.preferences.Visible() {
+		t.reloadLoginStartup()
 		t.fromSettings()
 		t.actions["preferences-save"].SetEnabled(false)
 	}
@@ -153,6 +187,18 @@ func (t *Tunnels) closePreferences() {
 	d.Present()
 }
 func (t *Tunnels) saveSettings() error {
+	enabled := t.switches["start_login"].Active()
+	if !t.loginStartupAvailable || enabled == t.loginStartupEnabled {
+		return t.saveGeneralSettings()
+	}
+	if err := autostart.Commit(LoginStartup, enabled, t.saveGeneralSettings); err != nil {
+		return err
+	}
+	t.loginStartupEnabled = enabled
+	return nil
+}
+
+func (t *Tunnels) saveGeneralSettings() error {
 	previous := *Settings
 	Settings.MultipleTunnels = t.switches["multiple_active_tunnels"].Active()
 	Settings.StartOnTray = t.switches["start_tray"].Active()

@@ -3,6 +3,8 @@ package settings
 import (
 	"encoding/json"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -47,7 +49,33 @@ func (s *Settings) Save() error {
 		return err
 	}
 
-	if err := ioutil.WriteFile(FilePath, data, 0660); err != nil {
+	// Rename only after the complete settings file has been written. A failed
+	// preference save must leave the previous on-disk settings intact.
+	mode := os.FileMode(0660)
+	if info, err := os.Stat(FilePath); err == nil {
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	file, err := os.CreateTemp(filepath.Dir(FilePath), ".wireguard-settings-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	if err = file.Chmod(mode); err == nil {
+		_, err = file.Write(data)
+	}
+	if err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if err = os.Rename(file.Name(), FilePath); err != nil {
 		return err
 	}
 

@@ -367,6 +367,12 @@
                   </object>
                 </child>
                 <child>
+                  <object class="AdwSwitchRow" id="settings_start_login">
+                    <property name="title">Start at login</property>
+                    <property name="subtitle">Open WireGuard when you sign in. Administrator authentication may be required.</property>
+                  </object>
+                </child>
+                <child>
                   <object class="AdwSwitchRow" id="settings_start_tray">
                     <property name="title">Start in the system tray</property>
                     <property name="subtitle">Hide the main window when the app starts.</property>

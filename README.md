@@ -40,6 +40,22 @@ Closing Preferences with unsaved changes offers **Keep Editing**, **Discard**,
 or **Save**. Country flags use the endpoint's IP location and download a country
 database when first enabled.
 
+**Start at login** is enabled automatically on the first launch for your desktop
+user when no login entry exists. Change it under **Preferences → General** and
+choose **Save**. An existing choice to disable startup stays disabled. This applies
+only to your user account. The normal administrator authentication prompt may appear at login;
+canceling it skips that launch. To stop launching at login, turn the preference
+off and save. **Start in the system tray** separately controls whether the main
+window appears; without an available tray host, the window is shown. Remembered
+tunnels reconnect after the app starts when **Remember connected tunnels** is on.
+This preference does not enable a VPN service at system boot.
+
+The login entry is stored as `wireguard-linux-gui.desktop` under
+`$XDG_CONFIG_HOME/autostart` (normally `~/.config/autostart`). Disabling startup
+writes a `Hidden=true` entry. Launching through the desktop menu preserves a custom
+`XDG_CONFIG_HOME`; direct `sudo` launches use the invoking user's `~/.config`.
+The preference is unavailable when no non-root desktop user can be identified.
+
 Closing the window keeps the app in the system tray when a StatusNotifier host
 is available (Ubuntu includes one). Without a host, the window stays accessible
 and closing it exits the app. Launching it again or

@@ -13,12 +13,29 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/rs/zerolog/log"
 	"wireguard-linux-gui/gui"
+	"wireguard-linux-gui/internal/autostart"
 	"wireguard-linux-gui/internal/desktopbus"
 	"wireguard-linux-gui/internal/instance"
 )
 
 func main() { os.Exit(run()) }
 func run() int {
+	if handled, err := autostart.RunHelper(os.Args); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	}
+	if handled, code := autostart.Launch(os.Args, os.Geteuid(), os.Getenv("HOME"), os.Getenv("XDG_CONFIG_HOME"), autostart.InvokePKExec); handled {
+		return code
+	}
+	config, appArgs, contextErr := autostart.Context(os.Args)
+	if contextErr != nil {
+		fmt.Fprintln(os.Stderr, contextErr)
+		return 1
+	}
+
 	if handled, err := desktopbus.RunHelper(os.Args); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -29,6 +46,12 @@ func run() int {
 	if os.Geteuid() != 0 {
 		fmt.Fprintln(os.Stderr, "Run: pkexec wireguard-linux-gui (root is required for /etc/wireguard and wg-quick)")
 		return 1
+	}
+	client, startupErr := autostart.NewClient(desktopbus.UserID(), config)
+	if startupErr != nil {
+		gui.LoginStartupError = startupErr.Error()
+	} else {
+		gui.LoginStartup = client
 	}
 	if err := gui.Settings.Init(); err != nil {
 		log.Error().Err(err).Msg("load settings")
@@ -48,6 +71,11 @@ func run() int {
 		return 0
 	}
 	defer owner.Close()
+	if gui.LoginStartup != nil {
+		if err := autostart.EnsureDefault(gui.LoginStartup); err != nil {
+			log.Error().Err(err).Msg("enable default login startup")
+		}
+	}
 	var controller *gui.Tunnels
 	failed := false
 	app.ConnectActivate(func() {
@@ -76,7 +104,7 @@ func run() int {
 			app.Quit()
 		}
 	})
-	result := app.Run(os.Args)
+	result := app.Run(appArgs)
 	if failed {
 		return 1
 	}

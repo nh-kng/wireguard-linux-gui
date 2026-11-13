@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
+	"wireguard-linux-gui/internal/autostart"
 	"wireguard-linux-gui/internal/statuspoll"
 	"wireguard-linux-gui/internal/tray"
 	"wireguard-linux-gui/settings"
@@ -28,10 +29,12 @@ const (
 )
 
 var (
-	TunnelsPath = "/etc/wireguard/"
-	Settings    = &settings.Settings{}
-	wgc         wireguardClient
-	current     *Tunnels
+	LoginStartup      autostart.Manager
+	LoginStartupError string
+	TunnelsPath       = "/etc/wireguard/"
+	Settings          = &settings.Settings{}
+	wgc               wireguardClient
+	current           *Tunnels
 )
 
 type wireguardClient interface {
@@ -65,6 +68,8 @@ type Tunnels struct {
 	editingName, lastSelected             string
 	selectedPublicKey, selectedListenPort string
 	reconnectedRememberedServers          bool
+	loginStartupEnabled                   bool
+	loginStartupAvailable                 bool
 	syncingSettings                       bool
 	modified                              bool
 	closed                                bool
@@ -98,9 +103,10 @@ func Create(app *adw.Application, b *gtk.Builder, assets fs.FS, sessionAddress s
 	for _, id := range []string{"interface_status", "interface_public_key", "interface_listen_port", "interface_addresses", "interface_dns_servers", "peer_public_key", "peer_allowed_ips", "peer_endpoint", "peer_keepalive", "peer_latest_handshake", "peer_transfer"} {
 		t.fields[id] = object[*gtk.Label](b, "label_"+id)
 	}
-	for _, id := range []string{"multiple_active_tunnels", "start_tray", "check_updates", "remember_connected", "country_flags", "polkit_policy"} {
+	for _, id := range []string{"multiple_active_tunnels", "start_login", "start_tray", "check_updates", "remember_connected", "country_flags", "polkit_policy"} {
 		t.switches[id] = object[*adw.SwitchRow](b, "settings_"+id)
 	}
+	t.reloadLoginStartup()
 	t.fromSettings()
 	current = t
 	var err error
